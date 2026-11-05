@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fincore_test
+          POSTGRES_PASSWORD: fincore_test_local
+          POSTGRES_DB: fincore_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fincore_test -d fincore_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://fincore_test:fincore_test_local@localhost:5432/fincore_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run tortoise -c fincore.config.database.TORTOISE_ORM migrate
+      - run: uv run pytest

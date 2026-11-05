@@ -1,0 +1,28 @@
+{% extends "finance/layout.html" %}
+{% block title %}Contas · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">GESTÃO FINANCEIRA</span><h1>Bancos e contas</h1><p>Contas financeiras e saldos realizados da sua organização.</p></div>
+  <div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="account-drawer" aria-expanded="false">+ Nova conta bancária</button></div>
+</div>
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Contas cadastradas</h3><p>Saldos consideram o saldo inicial e movimentações liquidadas.</p></div><span class="step-count">{{ accounts|length }} conta(s)</span></div>
+  {% if accounts %}<div class="table-responsive mt-3"><table class="table align-middle"><thead><tr><th>Instituição</th><th>Conta</th><th>Tipo</th><th class="text-end">Saldo</th></tr></thead><tbody>{% for account, balance in accounts %}<tr><td><strong>{{ account.bank_name or '—' }}</strong></td><td>{{ account.name }}<small class="d-block text-secondary">{{ account.currency }}</small></td><td>{{ {'bank':'Conta bancária','cash':'Caixa','wallet':'Carteira'}.get(account.account_type, account.account_type) }}</td><td class="text-end fw-semibold">R$ {{ '%.2f'|format(balance)|replace('.', ',') }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="finance-empty"><span>▤</span><strong>Nenhuma conta cadastrada</strong><small>Cadastre um banco e uma conta financeira para começar.</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="account-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="account-drawer-title" {% if error %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">BANCOS E CONTAS</span><h2 id="account-drawer-title">Cadastrar conta bancária</h2><p>Informe a instituição e os dados básicos da conta.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/accounts" class="movement-drawer-form" data-movement-form>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if error %}<div class="alert alert-danger mx-4 mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="bank-name">Banco ou instituição</label><input class="form-control" id="bank-name" name="bank_name" maxlength="120" placeholder="Ex.: Banco do Brasil"></div>
+      <div><label class="form-label" for="account-name">Nome da conta</label><input class="form-control" id="account-name" name="name" maxlength="120" placeholder="Ex.: Conta principal" required></div>
+      <div><label class="form-label" for="account-type">Tipo</label><select class="form-select" id="account-type" name="account_type"><option value="bank">Conta bancária</option><option value="cash">Caixa</option><option value="wallet">Carteira</option></select></div>
+      <div><label class="form-label" for="opening-balance">Saldo inicial (R$)</label><input class="form-control" id="opening-balance" name="opening_balance" type="number" min="0" step="0.01" value="0.00"></div>
+    </div>
+    {% if error %}<div class="movement-drawer-footer"><span>Corrija os dados e tente salvar novamente.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Salvar conta</button></div></div>{% else %}<div class="movement-drawer-footer"><span>O cadastro é local e não conecta ao banco externo.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Salvar conta</button></div></div>{% endif %}
+  </form>
+</aside>
+{% endblock %}

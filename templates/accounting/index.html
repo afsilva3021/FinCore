@@ -1,0 +1,60 @@
+{% extends "finance/layout.html" %}
+{% block title %}Contabilidade · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading"><div><span class="eyebrow">CONTABILIDADE</span><h1>Plano de contas e diário</h1><p>Lançamentos por partidas dobradas, balanço e histórico de estornos.</p></div></div>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<section class="finance-grid accounting-forms">
+  <article class="panel-card finance-form-card"><div class="panel-heading"><div><h3>Nova conta contábil</h3><p>Use a natureza da conta para calcular o saldo normal.</p></div></div>
+    <form method="post" action="/accounting/accounts" class="mt-3"><input type="hidden" name="csrf" value="{{ csrf }}"><div class="row g-2"><div class="col-4"><label class="form-label" for="account-code">Código</label><input class="form-control" id="account-code" name="code" maxlength="32" required placeholder="1.1.01"></div><div class="col-8"><label class="form-label" for="ledger-name">Nome</label><input class="form-control" id="ledger-name" name="name" maxlength="160" required placeholder="Caixa e bancos"></div></div><div class="mt-3 mb-3"><label class="form-label" for="ledger-type">Natureza</label><select class="form-select" id="ledger-type" name="account_type" data-ledger-type><option value="asset">Ativo</option><option value="liability">Passivo</option><option value="equity">Patrimônio líquido</option><option value="revenue">Receita</option><option value="expense">Despesa</option></select></div><div class="mb-3"><label class="form-label" for="account-kind">Grupo contábil</label><select class="form-select" id="account-kind" name="account_kind"><option value="analytic">Analítica — recebe lançamentos</option><option value="synthetic">Sintética — totaliza subcontas</option></select></div><div class="mb-3"><label class="form-label" for="account-parent">Conta superior</label><select class="form-select" id="account-parent" name="parent_id" data-ledger-parent><option value="">Sem conta superior</option>{% for parent, balance in parent_accounts %}<option value="{{ parent.id }}" data-ledger-parent-type="{{ parent.account_type }}">{{ parent.code }} · {{ parent.name }}</option>{% endfor %}</select><small class="form-text">Contas analíticas só podem ficar dentro de grupos sintéticos da mesma natureza.</small></div><button class="btn btn-outline-primary w-100" type="submit">Adicionar conta ao plano</button></form>
+  </article>
+  <article class="panel-card finance-form-card"><div class="panel-heading"><div><h3>Novo lançamento</h3><p>Rascunhos podem ser efetivados somente quando débitos e créditos fecharem.</p></div></div>
+    {% if posting_accounts|length < 2 %}<div class="alert alert-info mt-3 mb-0">Crie ao menos duas contas analíticas para registrar um lançamento.</div>{% else %}
+    <form method="post" action="/accounting/journals" class="mt-3" data-journal-form><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+      <div class="row g-2 mb-3"><div class="col-12 col-md-4"><label class="form-label" for="journal-date">Data</label><input class="form-control" id="journal-date" type="date" name="entry_date" value="{{ today }}" required></div><div class="col-12 col-md-8"><label class="form-label" for="journal-description">Descrição</label><input class="form-control" id="journal-description" name="description" maxlength="240" required placeholder="Ex.: Aporte de capital"></div></div>
+      <div class="journal-line-head"><span>Conta contábil analítica</span><span>Débito (R$)</span><span>Crédito (R$)</span></div>
+      <div data-journal-lines>{% for line_no in range(1,3) %}<div class="journal-line" data-journal-line><select class="form-select" name="account_id_{{ line_no }}" aria-label="Conta da linha {{ line_no }}"><option value="">Selecione uma conta</option>{% for account, balance in posting_accounts %}<option value="{{ account.id }}">{{ account.code }} · {{ account.name }}</option>{% endfor %}</select><input class="form-control" name="debit_{{ line_no }}" type="number" min="0" step="0.01" aria-label="Débito linha {{ line_no }}" placeholder="0,00"><input class="form-control" name="credit_{{ line_no }}" type="number" min="0" step="0.01" aria-label="Crédito linha {{ line_no }}" placeholder="0,00"></div>{% endfor %}</div>
+      <div class="d-flex justify-content-between align-items-center mt-3"><button class="btn btn-sm btn-outline-secondary" type="button" data-add-journal-line>＋ Adicionar linha</button><span class="currency-note">Moeda: BRL</span></div>
+      <div class="d-flex gap-2 mt-3 justify-content-end"><button class="btn btn-outline-secondary" name="action" value="draft" type="submit">Salvar rascunho</button><button class="btn btn-primary" name="action" value="post" type="submit">Salvar e efetivar</button></div>
+    </form>{% endif %}
+  </article>
+</section>
+
+<section class="finance-grid accounting-lists mt-4">
+  <article class="panel-card finance-list-card"><div class="panel-heading"><div><h3>Plano de contas</h3><p>Grupos sintéticos totalizam subcontas; lançamentos usam contas analíticas.</p></div><span class="step-count">{{ accounts|length }} conta(s)</span></div>
+    {% if accounts %}<div class="table-responsive mt-3"><table class="table align-middle"><thead><tr><th>Código / conta</th><th>Grupo</th><th>Natureza</th><th class="text-end">Saldo normal</th></tr></thead><tbody>{% for account, balance in accounts %}<tr><td>{% if account.parent_id %}<span class="text-secondary me-1">↳</span>{% endif %}<strong>{{ account.code }} · {{ account.name }}</strong></td><td><span class="type-pill {{ 'account-kind-synthetic' if account.is_synthetic else 'account-kind-analytic' }}">{{ 'Sintética' if account.is_synthetic else 'Analítica' }}</span></td><td>{{ {'asset':'Ativo','liability':'Passivo','equity':'Patrimônio líquido','revenue':'Receita','expense':'Despesa'}.get(account.account_type) }}</td><td class="text-end">R$ {{ '%.2f'|format(balance)|replace('.', ',') }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="finance-empty"><span>▧</span><strong>Plano de contas vazio</strong><small>Cadastre contas antes de lançar partidas.</small></div>{% endif %}
+  </article>
+  <article class="panel-card finance-list-card"><div class="panel-heading"><div><h3>Diário contábil</h3><p>Lançamentos efetivados são imutáveis; correções são feitas por estorno.</p></div><span class="step-count">{{ entries|length }} lançamento(s)</span></div>
+    {% if entries %}
+    <div class="journal-list mt-3">
+      {% for entry, lines, debit, credit in entries %}
+      <details class="journal-item">
+        <summary>
+          <span class="journal-date">{{ entry.entry_date.strftime('%d/%m/%Y') }}</span>
+          <span class="journal-title"><strong>{{ entry.description }}</strong><small>{{ lines|length }} linha(s) · Débitos R$ {{ '%.2f'|format(debit)|replace('.', ',') }} · Créditos R$ {{ '%.2f'|format(credit)|replace('.', ',') }}</small></span>
+          <span class="type-pill {{ 'status-settled' if entry.status == 'posted' else 'status-open' }}">{% if entry.id in reversed_ids %}Estornado{% elif entry.reversal_of_id %}Estorno efetivado{% else %}{{ 'Efetivado' if entry.status == 'posted' else 'Rascunho' }}{% endif %}</span>
+        </summary>
+        <div class="journal-detail">
+          <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Conta</th><th class="text-end">Débito</th><th class="text-end">Crédito</th></tr></thead><tbody>{% for line in lines %}<tr><td>{{ line.account.code }} · {{ line.account.name }}</td><td class="text-end">{{ '%.2f'|format(line.debit)|replace('.', ',') }}</td><td class="text-end">{{ '%.2f'|format(line.credit)|replace('.', ',') }}</td></tr>{% endfor %}</tbody></table></div>
+          {% if entry.status == 'draft' %}
+          <details class="draft-editor"><summary>Editar linhas do rascunho</summary>
+            <form method="post" action="/accounting/journals/{{ entry.id }}/update" data-journal-form>
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <label class="form-label" for="edit-date-{{ entry.id }}">Data</label><input class="form-control mb-2" id="edit-date-{{ entry.id }}" type="date" name="entry_date" value="{{ entry.entry_date.isoformat() }}" required>
+              <label class="form-label" for="edit-description-{{ entry.id }}">Descrição</label><input class="form-control mb-2" id="edit-description-{{ entry.id }}" name="description" maxlength="240" value="{{ entry.description }}" required>
+              <div class="journal-line-head"><span>Conta analítica</span><span>Débito</span><span>Crédito</span></div>
+              <div data-journal-lines>{% for line in lines %}<div class="journal-line" data-journal-line><select class="form-select" name="account_id_{{ loop.index }}" aria-label="Conta linha {{ loop.index }}" required>{% for account, balance in posting_accounts %}<option value="{{ account.id }}" {% if account.id == line.account_id %}selected{% endif %}>{{ account.code }} · {{ account.name }}</option>{% endfor %}</select><input class="form-control" name="debit_{{ loop.index }}" type="number" min="0" step="0.01" value="{{ '%.2f'|format(line.debit) }}"><input class="form-control" name="credit_{{ loop.index }}" type="number" min="0" step="0.01" value="{{ '%.2f'|format(line.credit) }}"></div>{% endfor %}</div>
+              <button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-add-journal-line>＋ Adicionar linha</button>
+              <div class="journal-actions gap-2 mt-3"><button class="btn btn-sm btn-outline-secondary" type="submit" name="action" value="draft">Salvar rascunho</button><button class="btn btn-sm btn-outline-success" type="submit" name="action" value="post">Salvar e efetivar</button></div>
+            </form>
+          </details>
+          {% elif entry.status == 'posted' and entry.id not in reversed_ids and not entry.reversal_of_id %}
+          <div class="journal-actions"><form method="post" action="/accounting/journals/{{ entry.id }}/reverse" data-confirm="Criar um lançamento compensatório de estorno?"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-danger" type="submit">Estornar</button></form></div>
+          {% endif %}
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+    {% else %}<div class="finance-empty"><span>≡</span><strong>Nenhum lançamento contábil</strong><small>Crie um lançamento balanceado para iniciar o diário.</small></div>{% endif %}
+  </article>
+</section>
+{% endblock %}

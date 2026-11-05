@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Visão geral · FinCore{% endblock %}
+{% block content %}
+<div class="dashboard-layout">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand sidebar-brand" href="/dashboard"><span class="brand-mark">F</span><span>FinCore</span></a>
+    <div class="org-switch"><span class="org-avatar">{{ organization.name[:1]|upper }}</span><span class="org-copy"><strong>{{ organization.name }}</strong><small>Organização</small></span></div>
+    <nav class="main-nav" aria-label="Navegação principal">
+      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="true" aria-controls="nav-finance"><span>FINANÇAS</span><i aria-hidden="true">⌄</i></button>
+      <div class="nav-group" id="nav-finance">
+        <a class="nav-link active" href="/dashboard"><span>▦</span> Visão geral</a>
+        <a class="nav-link" href="/transactions"><span>⇄</span> Transações</a>
+        <a class="nav-link" href="/payables"><span>↘</span> Contas a pagar</a>
+        <a class="nav-link" href="/receivables"><span>↗</span> Contas a receber</a>
+        <a class="nav-link" href="/accounts"><span>▤</span> Bancos e contas</a>
+        <a class="nav-link" href="/categories"><span>◈</span> Categorias</a>
+      </div>
+      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-management"><span>GESTÃO</span><i aria-hidden="true">⌄</i></button>
+      <div class="nav-group" id="nav-management" hidden>
+        <a class="nav-link" href="/accounting"><span>▧</span> Contabilidade</a>
+        <a class="nav-link" href="/reconciliation"><span>⟳</span> Conciliação</a>
+        <a class="nav-link" href="/reports"><span>▥</span> Relatórios</a>
+        <a class="nav-link" href="/integrations"><span>⇢</span> Integrações</a>
+      </div>
+    </nav>
+    <div class="sidebar-bottom"><div class="sidebar-profile"><span class="profile-avatar">{{ name[:1]|upper }}</span><span><strong>{{ name }}</strong><small>Administrador</small></span><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="logout-button" aria-label="Sair" title="Sair">↗</button></form></div></div>
+  </aside>
+  <main class="main-content">
+    <header class="topbar"><button class="menu-toggle" type="button" data-sidebar-toggle aria-label="Abrir menu">☰</button><div class="breadcrumb-line"><span>Início</span><span class="crumb-separator">/</span><strong>Visão geral</strong></div><div class="topbar-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Ativar tema escuro" title="Ativar tema escuro"><span data-theme-icon aria-hidden="true">☾</span></button><span class="demo-pill database-status"><i></i> Dados do banco</span><span class="topbar-avatar">{{ name[:1]|upper }}</span></div></header>
+    <div class="page-container">
+      <div class="page-heading"><div><span class="eyebrow">RESUMO FINANCEIRO</span><h1>Visão geral</h1><p>Posição financeira atual de {{ organization.name }}.</p></div><a class="btn btn-primary" href="/transactions">+ Nova movimentação</a></div>
+      <div class="dashboard-context"><span class="context-mark">{{ organization.name[:1]|upper }}</span><div><strong>{{ organization.name }}</strong><small>Indicadores calculados a partir das contas e transações cadastradas.</small></div><a href="/accounts">Ver contas <span>→</span></a></div>
+
+      <div class="section-heading"><div><h2>Indicadores realizados</h2><p>Valores de movimentações liquidadas e saldos atuais.</p></div></div>
+      <section class="metrics-grid" aria-label="Indicadores financeiros">
+        <article class="metric-card"><div class="metric-top"><span>Saldo realizado</span><span class="metric-icon mint">↗</span></div><strong class="metric-value">R$ {{ '%.2f'|format(total_balance)|replace('.', ',') }}</strong><small>Soma atual dos saldos das contas</small></article>
+        <article class="metric-card"><div class="metric-top"><span>Receitas liquidadas</span><span class="metric-icon blue">＋</span></div><strong class="metric-value">R$ {{ '%.2f'|format(income)|replace('.', ',') }}</strong><small>Total recebido nas movimentações cadastradas</small></article>
+        <article class="metric-card"><div class="metric-top"><span>Despesas liquidadas</span><span class="metric-icon coral">−</span></div><strong class="metric-value">R$ {{ '%.2f'|format(expenses)|replace('.', ',') }}</strong><small>Total pago nas movimentações cadastradas</small></article>
+        <article class="metric-card"><div class="metric-top"><span>Em aberto</span><span class="metric-icon violet">◷</span></div><strong class="metric-value">{{ open_count }}</strong><small>Movimentações ainda não liquidadas</small></article>
+      </section>
+
+      <section class="dashboard-lower real-data-panels">
+        <article class="panel-card chart-panel"><div class="panel-heading"><div><h3>Movimentações recentes</h3><p>Registros mais recentes do banco de dados</p></div><a class="panel-action" href="/transactions">Ver extrato →</a></div>
+          {% if recent %}<div class="recent-list">{% for item in recent %}<div class="recent-row"><span class="recent-icon {{ 'mint' if item.transaction_type in ['income','transfer_in'] else 'coral' }}">{{ '＋' if item.transaction_type in ['income','transfer_in'] else '−' }}</span><span class="recent-copy"><strong>{{ item.description }}</strong><small>{{ item.account.name }} · {{ item.competence_date.strftime('%d/%m/%Y') }}</small></span><span class="recent-amount">{% if item.transaction_type in ['expense','transfer_out'] %}−{% else %}+{% endif %} R$ {{ '%.2f'|format(item.amount)|replace('.', ',') }}</span></div>{% endfor %}</div>{% else %}<div class="empty-chart"><div class="empty-chart-icon">⌁</div><strong>Nenhuma movimentação cadastrada</strong><span>Quando você registrar receitas, despesas ou transferências, elas aparecerão aqui.</span></div>{% endif %}
+        </article>
+        <article class="panel-card account-balance-panel"><div class="panel-heading"><div><h3>Saldos por conta</h3><p>Saldo inicial mais movimentos liquidados</p></div><a class="panel-action" href="/accounts">Gerenciar →</a></div>
+          {% if balances %}<div class="recent-list">{% for account, balance in balances %}<div class="recent-row"><span class="account-balance-icon">▤</span><span class="recent-copy"><strong>{{ account.name }}</strong><small>{{ account.bank_name or {'bank':'Conta bancária','cash':'Caixa','wallet':'Carteira'}.get(account.account_type, account.account_type) }} · {{ account.currency }}</small></span><span class="recent-amount">R$ {{ '%.2f'|format(balance)|replace('.', ',') }}</span></div>{% endfor %}</div>{% else %}<div class="empty-chart"><div class="empty-chart-icon">▤</div><strong>Nenhuma conta cadastrada</strong><span>Cadastre um banco e uma conta para acompanhar os saldos reais.</span><a class="panel-action" href="/accounts">Cadastrar conta →</a></div>{% endif %}
+        </article>
+      </section>
+      <footer class="page-footer"><span>FinCore <span class="footer-dot">·</span> Gestão financeira</span><span>Os indicadores refletem os dados cadastrados por {{ organization.name }}.</span></footer>
+    </div>
+  </main>
+</div>
+{% endblock %}

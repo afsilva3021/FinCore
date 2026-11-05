@@ -1,0 +1,12 @@
+{% extends "finance/layout.html" %}
+{% set active = 'integrations' %}
+{% set section = 'Integrações simuladas' %}
+{% block title %}Integrações · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading"><div><span class="eyebrow">AMBIENTE LOCAL DE DEMONSTRAÇÃO</span><h1>Integrações</h1><p>Experimente os contratos internos sem chamar serviços externos.</p></div></div>
+<div class="alert alert-warning" role="status"><strong>Simulação local:</strong> não são enviados pagamentos, webhooks, consentimentos ou dados bancários.</div>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if result %}<section class="content-card mb-4"><span class="badge text-bg-info">SIMULADO</span><h2 class="mt-2">{{ result.message }}</h2><p>Referência: <code>{{ result.reference }}</code></p>{% if result.amount %}<p>Valor de demonstração: R$ {{ '%.2f'|format(result.amount) }}</p>{% endif %}</section>{% endif %}
+<section class="content-card"><div class="card-heading"><div><h2>Executar cenário demonstrativo</h2><p>Os identificadores são fictícios e não são persistidos.</p></div></div><form method="post" action="/integrations/simulate" class="row g-3"><input type="hidden" name="csrf" value="{{ csrf }}"><div class="col-md-6"><label class="form-label" for="adapter">Contrato</label><select class="form-select" id="adapter" name="adapter" required><option value="pix">Pix — criação simulada</option><option value="boleto">Boleto — emissão simulada</option><option value="card">Cartão — autorização simulada</option><option value="webhook">Webhook — evento fictício</option><option value="open_finance">Open Finance — consentimento fictício</option></select></div><div class="col-md-4" data-amount-field><label class="form-label" for="amount">Valor de demonstração</label><div class="input-group"><span class="input-group-text">R$</span><input class="form-control" id="amount" name="amount" inputmode="decimal" placeholder="0,00"></div></div><div class="col-12"><button class="btn btn-primary" type="submit">Simular</button></div></form></section>
+<section class="content-card mt-4"><h2>Limites atuais</h2><ul class="mb-0"><li>Sem conexão com bancos, bandeiras ou provedores.</li><li>Sem envio de pagamentos reais ou cobrança.</li><li>Sem consentimento Open Finance ou persistência de tokens.</li><li>Webhook é apenas um exemplo de evento interno, sem endpoint público.</li></ul></section>
+{% endblock %}

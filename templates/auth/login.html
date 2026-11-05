@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Entrar · FinCore{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+{% block content %}
+<main class="auth-shell">
+  <section class="auth-brand-panel">
+    <a class="brand brand-light" href="/"><span class="brand-mark">F</span><span>FinCore</span></a>
+    <div class="auth-brand-copy">
+      <span class="eyebrow">FINANÇAS COM CLAREZA</span>
+      <h1>Suas finanças,<br><em>em equilíbrio.</em></h1>
+      <p>Organize receitas, despesas e contas em um só lugar.</p>
+    </div>
+    <div class="brand-orbit orbit-one"></div><div class="brand-orbit orbit-two"></div>
+    <small>Gestão financeira para decisões melhores.</small>
+  </section>
+  <section class="auth-form-panel">
+    <div class="auth-mobile-brand"><a class="brand" href="/"><span class="brand-mark">F</span><span>FinCore</span></a></div>
+    <div class="auth-card">
+      <span class="eyebrow text-primary">BEM-VINDO DE VOLTA</span>
+      <h2>Acesse sua conta</h2>
+      <p class="text-secondary mb-4">Entre para acompanhar sua organização financeira.</p>
+      {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+      <form method="post" action="/login" class="needs-validation" novalidate>
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="mb-3"><label for="email" class="form-label">E-mail</label><input class="form-control form-control-lg" type="email" name="email" id="email" autocomplete="email" required></div>
+        <div class="mb-2"><div class="d-flex justify-content-between"><label for="password" class="form-label">Senha</label></div><div class="input-group input-group-lg"><input class="form-control" type="password" name="password" id="password" autocomplete="current-password" required><button class="btn btn-outline-secondary password-toggle" type="button" aria-label="Mostrar senha" data-password-toggle>◉</button></div></div>
+        <button class="btn btn-primary btn-lg w-100 mt-4" type="submit">Entrar <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="auth-footnote">Ainda não tem uma conta? <a href="/register">Criar conta</a></p>
+    </div>
+    <footer class="auth-legal">© 2026 FinCore <span>Ambiente de demonstração</span></footer>
+  </section>
+</main>
+{% endblock %}
