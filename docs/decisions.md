@@ -4,7 +4,7 @@
 
 - **Python 3.14:** versão estável instalada no ambiente e suportada pela versão atual do uv; fixada em `.python-version` e restringida no `pyproject.toml`.
 - **Tortoise migrations:** usar o CLI nativo documentado pelo Tortoise atual (`tortoise init`, `makemigrations`, `migrate`) em vez de Aerich, que a documentação classifica como alternativa legada. Confirmar os comandos na versão resolvida antes de registrar migrations.
-- **PostgreSQL local:** Compose publica apenas em `127.0.0.1:5433`; variáveis de usuário, senha e database alimentam tanto o serviço quanto o healthcheck.
+- **PostgreSQL local:** o banco fica só na rede interna `backend` do Compose, sem porta no host; `compose.dev.yaml` publica `127.0.0.1:5433` apenas para desenvolvimento fora do Docker. Variáveis de usuário, senha e database alimentam tanto o serviço quanto o healthcheck.
 - **URL do banco:** `DATABASE_URL` pode substituir a composição local padrão. O arquivo `.env.example` é apenas um exemplo, sem credencial real.
 - **Saúde:** `GET /health` confirma conectividade do banco e devolve 503 em indisponibilidade, sem expor exceções ao cliente.
 - **Escopo da fundação:** a fase inicial não implementava operações financeiras ou alegações de integração com bancos; módulos funcionais foram adicionados nas fases seguintes.
@@ -23,3 +23,6 @@
 - **Cadastro de clientes/fornecedores:** contatos usam a entidade `Counterparty` já vinculada a títulos, ampliada por migration aditiva. Cliente e fornecedor são papéis independentes (um contato pode ter ambos); não se duplica entidade nem se apaga fisicamente ao inativar. CPF/CNPJ é normalizado e único por organização quando informado.
 - **Consulta de CEP:** usa ViaCEP como serviço público opcional, com timeout e tratamento de CEP inválido/indisponibilidade. A consulta só preenche o formulário e não impede edição manual; não há credencial nem dependência de cadastro nos Correios.
 - **Interface consistente:** cadastros com formulário extenso abrem drawer lateral pelo botão de ação; o JavaScript compartilhado administra múltiplos drawers sem adicionar framework de frontend.
+
+- **Aplicação separada do banco (2026-11-06):** a aplicação roda em container próprio (`Dockerfile`, usuário `uid 10001`, sistema de arquivos somente leitura, `cap_drop: ALL`). O serviço `migrate` aplica migrations com o usuário dono e executa `fincore-setup-app-db-role`, que cria/atualiza de forma idempotente o usuário `APP_DB_USER` com apenas `SELECT/INSERT/UPDATE/DELETE` (sem DDL, sem acesso a `tortoise_migrations`). Validado rodando a suíte completa conectada com esse usuário. Limitação: a imagem não foi construída no ambiente da implementação (registries de imagem bloqueados); `docker compose config` e o fluxo equivalente fora de container foram validados.
+- **Bloqueio de segredo padrão:** `fincore` recusa iniciar quando `APP_HOST` não é local e `AUTH_SECRET` é o padrão ou tem menos de 32 caracteres.

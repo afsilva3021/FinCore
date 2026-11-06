@@ -1,0 +1,15 @@
+# Somente desenvolvimento: publica o PostgreSQL em 127.0.0.1:5433 para rodar a
+# aplicação fora do Docker (uv run fincore) ou abrir o banco num cliente SQL.
+# Não use este arquivo em produção.
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d db
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:5433:5432"
+    # Uma rede interna não publica portas; a rede db-host existe só para isso.
+    networks: [backend, db-host]
+
+networks:
+  db-host: {}

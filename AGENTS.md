@@ -186,13 +186,14 @@ https://github.com/firefly-iii/firefly-iii
 
 ## 7. Banco, Docker e migrations
 
+- Manter aplicação e banco em containers separados; o banco fica só na rede interna `backend`, e o container `app` usa o usuário restrito `APP_DB_USER` (sem DDL). Migrations rodam pelo serviço `migrate` com o usuário dono.
 - Usar `compose.yaml` com PostgreSQL, volume persistente e healthcheck que utilize **as mesmas variáveis** `POSTGRES_USER` e `POSTGRES_DB` configuradas no serviço.
 - Não fixar credenciais reais no Compose nem no código; usar `.env` local. Mapear portas locais apenas quando necessário.
 - Criar índices, constraints, chaves estrangeiras e restrições de unicidade para integridade no banco.
 - Migrations versionadas são obrigatórias; nunca usar `generate_schemas()` como mecanismo de produção.
 - Manter ambiente de teste isolado do desenvolvimento; testes não devem apagar dados reais.
 - Incluir seed **apenas para desenvolvimento**, com dados fictícios claramente sinalizados.
-- Para setup local reproduzível siga a seção de instalação do README. `docker compose up -d db` inicia PostgreSQL de desenvolvimento em `127.0.0.1:5433`; `docker compose --profile test up -d db-test` inicia banco de teste separado em `127.0.0.1:5434`.
+- Para setup local reproduzível siga a seção de instalação do README. `docker compose up -d --build` sobe aplicação, migrations e banco em containers separados (banco só na rede interna); `docker compose -f compose.yaml -f compose.dev.yaml up -d db` publica o PostgreSQL de desenvolvimento em `127.0.0.1:5433` para rodar a aplicação fora do Docker; `docker compose --profile test up -d db-test` inicia banco de teste separado em `127.0.0.1:5434`.
 - `.env.example` contém somente credenciais locais descartáveis. Não copie valores locais para produção. A inicialização padrão do produto não possui dados seed e o dashboard não pode usar fixtures como dados reais.
 - Alterações de schema são aditivas por padrão. Faça backup antes de migration de risco, documente rollback e nunca remova volumes ou registros para “limpar” o ambiente. Os testes não podem chamar comandos de reset, truncate ou exclusão global.
 
@@ -260,7 +261,7 @@ Na primeira execução, o Codex deve:
 Para construir o FinCore do zero usando somente estes documentos e o README:
 
 1. Trate o README como requisitos do produto, instalação e contratos visíveis; leia os documentos ligados em `docs/` e use este arquivo como restrições de arquitetura/segurança.
-2. Inspecione o ambiente, ferramentas e arquivos antes de assumir que estão ausentes. Instale dependências com `uv sync`; use `cp .env.example .env` para ambiente local e suba o PostgreSQL com `docker compose up -d db` sem apagar volumes existentes.
+2. Inspecione o ambiente, ferramentas e arquivos antes de assumir que estão ausentes. Instale dependências com `uv sync`; use `cp .env.example .env` para ambiente local e suba o PostgreSQL com `docker compose -f compose.yaml -f compose.dev.yaml up -d db` sem apagar volumes existentes.
 3. Implemente as fases em ordem e em incrementos utilizáveis. O Compose precisa publicar o PostgreSQL local, persistir dados em volume, validar saúde e oferecer serviço isolado para testes. Faça `/health`, migrations e fluxos de execução funcionarem antes dos módulos.
 4. Entregue páginas Bootstrap renderizadas no servidor junto dos casos de uso, persistência e validação; uma API ou protótipo visual sozinho não satisfaz o produto.
 5. Rode migrations e testes no banco de teste. Não interrompa o trabalho para pedir decisões rotineiras/reversíveis; escolha defaults documentados. Pergunte apenas quando um dado de alto risco, credencial legítima ou contrato externo for indispensável. Mantenha simuladores quando esses itens faltarem.

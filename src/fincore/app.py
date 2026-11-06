@@ -8,7 +8,7 @@ from robyn import Response, Robyn
 from tortoise import Tortoise
 
 from fincore.config.database import TORTOISE_ORM
-from fincore.config.settings import settings
+from fincore.config.settings import settings, startup_problems
 from fincore.presentation.health import database_is_ready
 from fincore.presentation.web import (
     register_accounting_routes,
@@ -68,4 +68,7 @@ register_api_routes(app)
 
 
 def main() -> None:
+    problems = startup_problems(settings)
+    if problems:
+        raise SystemExit("Configuração insegura: " + " ".join(problems))
     app.start(host=settings.host, port=settings.port)

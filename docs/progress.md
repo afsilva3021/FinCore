@@ -127,3 +127,14 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Ruff e suíte completa (74 testes, com PostgreSQL de teste) aprovados.
 - [ ] Pendências levantadas na revisão: segredo `AUTH_SECRET` obrigatório fora do ambiente local, limite de tentativas de login, revogação de sessão no logout, headers de segurança, checagem de perfil (`Membership.role`), N+1 em saldos contábeis/diário e `CHECK` constraints no banco.
 >>>>>>> 552a8c89c4c1ea56746cb0baacda645697a96af0
+
+## Aplicação separada do banco (2026-11-06)
+
+- [x] `Dockerfile` multi-stage com `uv`, usuário sem root e healthcheck em `/health`; `.dockerignore` sem `.env`, testes ou `.git`.
+- [x] `compose.yaml`: serviços `db` (rede interna, sem porta no host), `migrate` (roda migrations e cria o usuário restrito) e `app` (rede interna + frontend, porta só em `127.0.0.1`, read-only, `cap_drop: ALL`).
+- [x] `compose.dev.yaml` para publicar o banco em `127.0.0.1:5433` só em desenvolvimento.
+- [x] `fincore-setup-app-db-role`: idempotente; usuário restrito não cria/apaga tabelas nem lê `tortoise_migrations` (verificado no PostgreSQL 16).
+- [x] Suíte completa (95 testes) aprovada conectando com o usuário restrito; aplicação iniciada como usuário sem privilégios, com código somente leitura, `/health` ok.
+- [x] Aplicação recusa iniciar exposta com `AUTH_SECRET` padrão/curto (testes unitários).
+- [ ] Pendente de validação: `docker compose up --build` real (o ambiente da implementação não alcança os registries de imagem).
+- [ ] Produção: proxy HTTPS, `SECURE_COOKIES=true`, cofre de segredos e backup — checklist no README.

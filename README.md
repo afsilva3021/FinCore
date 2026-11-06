@@ -22,6 +22,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-06 | Aplicação em container próprio, separado do banco: Dockerfile sem root, banco só em rede interna, usuário de banco restrito (sem DDL) para o app, migrations automáticas e bloqueio de `AUTH_SECRET` padrão fora do ambiente local. |
 | 2026-11-06 | Ícones de mostrar/ocultar senha também no cadastro; senhas dos testes de integração ajustadas à política de senha. |
 | 2026-11-05 | Contatos (clientes/fornecedores) com CPF/CNPJ, endereço via CEP, inativação; dados bancários nas contas financeiras (migrations `0014` e `0015`). |
 | 2026-11-05 | Cadastro com confirmação de senha e política de força validada no servidor. |
@@ -39,7 +40,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 | Interface | Bootstrap 5, HTML, CSS em `static/css/`, JavaScript em `static/js/` |
 | Aplicação | Casos de uso em `src/fincore/application/` |
 | Persistência | PostgreSQL 16, Tortoise ORM e migrations em `src/fincore/infrastructure/` |
-| Execução local | Docker Compose para banco; comando `uv run fincore` para aplicação |
+| Execução | Docker Compose com containers separados para aplicação, migrations e banco; `uv run fincore` para desenvolvimento |
 | Qualidade | pytest, httpx, Ruff |
 
 É um monólito modular, com apresentação, aplicação, domínio e infraestrutura separados por responsabilidade. O arquivo de inicialização é `src/fincore/app.py`; não existe `app.py` na raiz. A aplicação web usa sessão assinada e cookies; formulários de alteração validam CSRF. Senhas são protegidas com Argon2id. Consultas financeiras são limitadas à organização da sessão.
@@ -128,23 +129,69 @@ As regras contábeis, estados e invariantes estão detalhados em [docs/accountin
 - Git.
 - Docker Engine/Desktop com Docker Compose v2.
 - Python 3.14 e `uv` (ou instale `uv` pelo método oficial da sua plataforma).
-- Portas `5433` e `8080` livres. O banco de teste usa `5434`.
+- Porta `8080` livre. A porta `5433` só é usada no modo de desenvolvimento (`compose.dev.yaml`); o banco de teste usa `5434`.
 
-### Primeira inicialização
+### Opção A — tudo em containers (aplicação separada do banco)
 
-Na raiz do repositório:
+É o modo recomendado e o mesmo desenho que será usado em produção. A aplicação e o banco rodam em **containers separados**:
+
+```text
+            host (127.0.0.1:8080)
+                    │
+          ┌─────────▼─────────┐   rede frontend (saída para internet, ex.: ViaCEP)
+          │   app (FinCore)   │
+          └─────────┬─────────┘
+                    │ rede backend (internal: sem internet, sem porta no host)
+   ┌────────────────┼────────────────┐
+   │ migrate (roda e termina)        │ db (PostgreSQL, volume pgdata)
+   └─────────────────────────────────┘
+```
+
+- **O banco não é alcançável de fora:** fica só na rede interna `backend`, sem porta publicada no host.
+- **Dois usuários de banco:** o `migrate` usa o dono (`POSTGRES_USER`) para aplicar migrations e depois cria/atualiza o usuário restrito `APP_DB_USER`. O `app` conecta só com esse usuário, que pode ler e gravar dados, mas **não** cria, altera nem apaga tabelas e não acessa o histórico de migrations.
+- **Container da aplicação endurecido:** usuário sem root (`uid 10001`), sistema de arquivos somente leitura, `cap_drop: ALL`, `no-new-privileges` e healthcheck em `/health`.
+- **Segredos obrigatórios:** o Compose não sobe sem `POSTGRES_PASSWORD`, `APP_DB_PASSWORD` e `AUTH_SECRET`; a aplicação recusa subir exposta na rede com o `AUTH_SECRET` padrão ou com menos de 32 caracteres.
+
+```bash
+cp .env.example .env
+# edite o .env: troque POSTGRES_PASSWORD, APP_DB_PASSWORD e AUTH_SECRET
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # gera um AUTH_SECRET
+docker compose up -d --build
+docker compose ps            # migrate deve aparecer como "exited (0)"; app e db "healthy"
+```
+
+Abra `http://127.0.0.1:8080`. As migrations rodam sozinhas a cada `up`, então depois de um `git pull` basta repetir `docker compose up -d --build`.
+
+Operar só a aplicação, sem tocar no banco:
+
+```bash
+docker compose up -d --build app     # reconstrói e reinicia só o app (roda migrate antes)
+docker compose logs -f app
+docker compose restart app
+docker compose stop app
+```
+
+`docker compose down` para **todos** os serviços (o volume é mantido). Para mexer só na aplicação, sempre informe `app` no comando.
+
+### Opção B — aplicação fora do Docker (desenvolvimento)
+
+Útil para depurar com recarga rápida. O arquivo `compose.dev.yaml` publica o banco em `127.0.0.1:5433` só para isso:
 
 ```bash
 uv sync
 cp .env.example .env
-docker compose up -d db
+docker compose -f compose.yaml -f compose.dev.yaml up -d db
 uv run tortoise -c fincore.config.database.TORTOISE_ORM migrate
 uv run fincore
 ```
 
-Abra `http://127.0.0.1:8080`, crie o usuário e a organização pela tela de cadastro e use o sistema. O servidor permanece no terminal; `Ctrl+C` o encerra. A senha local de desenvolvimento presente no `.env.example` é pública e insegura para produção. Troque-a para qualquer ambiente compartilhado ou implantado; não envie `.env` ao Git.
+Nesse modo a aplicação conecta como o usuário dono e escuta só em `127.0.0.1`, por isso aceita o `AUTH_SECRET` padrão. Não use `compose.dev.yaml` em produção.
 
-O serviço PostgreSQL usa volume persistente `pgdata`. `docker compose down` para os serviços sem remover o volume. **Não execute `docker compose down -v`, `docker volume rm`, `TRUNCATE`, limpeza de migrations ou comandos de reset em bancos com dados.** Alterações de schema devem usar migrations aditivas e reversíveis sempre que possível.
+### Uso e cuidados com os dados
+
+Crie o usuário e a organização pela tela de cadastro. As senhas do `.env.example` são públicas e servem só para uso local; não envie `.env` ao Git.
+
+O PostgreSQL usa o volume persistente `pgdata`. **Não execute `docker compose down -v`, `docker volume rm`, `TRUNCATE`, limpeza de migrations ou comandos de reset em bancos com dados.** Alterações de schema devem usar migrations aditivas e reversíveis sempre que possível.
 
 Para verificar o serviço:
 
@@ -156,6 +203,8 @@ Para movimentos contábeis históricos anteriores ao vínculo com o razão, o ba
 
 ```bash
 uv run fincore-backfill-accounting
+# ou, com containers:
+docker compose run --rm app fincore-backfill-accounting
 ```
 
 ### Variáveis de ambiente
@@ -164,18 +213,32 @@ uv run fincore-backfill-accounting
 
 | Variável | Padrão local | Uso |
 |---|---|---|
-| `APP_HOST` | `127.0.0.1` | Interface de rede do Robyn |
+| `APP_HOST` | `127.0.0.1` | Interface de rede do Robyn (no container: `0.0.0.0`) |
 | `APP_PORT` | `8080` | Porta HTTP |
-| `POSTGRES_USER` | `fincore` | Usuário do banco |
+| `POSTGRES_USER` | `fincore` | Usuário dono do banco; no Docker, usado só pelo `migrate` |
 | `POSTGRES_PASSWORD` | `change-me-locally` | Senha local apenas |
 | `POSTGRES_DB` | `fincore` | Banco de desenvolvimento |
 | `POSTGRES_HOST` | `127.0.0.1` | Host PostgreSQL visto pela aplicação |
 | `POSTGRES_PORT` | `5433` | Porta publicada para desenvolvimento |
+| `APP_DB_USER` | `fincore_app` | Usuário restrito (sem DDL) usado pelo container `app` |
+| `APP_DB_PASSWORD` | `change-me-app-locally` | Senha do usuário restrito (16+ caracteres) |
+| `APP_BIND` / `APP_PUBLISHED_PORT` | `127.0.0.1` / `8080` | Onde o Compose publica a aplicação no host |
 | `DATABASE_URL` | ausente | Se definida, substitui os campos PostgreSQL |
-| `AUTH_SECRET` | chave de desenvolvimento | Assinatura de sessão; substituir fora de ambiente local descartável |
+| `AUTH_SECRET` | chave de desenvolvimento | Assinatura de sessão; obrigatório trocar (32+ caracteres) quando a aplicação escuta fora de `127.0.0.1` |
 | `SECURE_COOKIES` | `false` | Ativar `true` atrás de HTTPS |
 
 O Compose de teste tem credenciais fixas exclusivamente locais em `compose.yaml`, porta 5434 e volume `pgtestdata`. Nunca reutilize esses valores em produção.
+
+### Antes de ir para produção
+
+O Compose já separa aplicação e banco e usa padrões seguros, mas produção exige mais alguns passos:
+
+- [ ] **HTTPS na frente da aplicação:** um proxy reverso (Caddy, Nginx, Traefik ou o balanceador do provedor) termina o TLS e encaminha para o container `app`. Não exponha a porta 8080 diretamente na internet.
+- [ ] `SECURE_COOKIES=true` (cookies só trafegam por HTTPS).
+- [ ] Segredos fortes e únicos para `POSTGRES_PASSWORD`, `APP_DB_PASSWORD` e `AUTH_SECRET`, guardados num cofre de segredos (não em arquivo versionado). Trocar o `AUTH_SECRET` derruba todas as sessões ativas.
+- [ ] Backup automatizado e testado do volume/banco (`pg_dump` agendado ou backup do serviço gerenciado) antes de qualquer migration.
+- [ ] Se usar banco gerenciado (RDS, Cloud SQL etc.), remova o serviço `db` e aponte `POSTGRES_HOST` para ele; mantenha os dois usuários (dono para migrations, restrito para o app) e exija TLS na conexão.
+- [ ] Pendências de segurança da aplicação listadas em [docs/progress.md](docs/progress.md): limite de tentativas de login, revogação de sessão no logout, headers de segurança (CSP etc.) e checagem de perfil (`Membership.role`).
 
 ### Banco de teste e testes
 
@@ -215,10 +278,14 @@ src/fincore/
   application/money.py           conversão de valores pt-BR e da API para Decimal
   config/                        variáveis de ambiente e conexão ORM
   infrastructure/                 modelos Tortoise e migrations versionadas
+  infrastructure/db_roles.py     usuário restrito do banco usado pelo container app
   presentation/                   health e rotas server-rendered/API
 templates/                        templates Jinja/Bootstrap por módulo
 static/css/                       tema claro/escuro e estilos de interface
 static/js/                        drawer, confirmações modais e interações
+Dockerfile                        imagem da aplicação (sem root, só leitura)
+compose.yaml                      app, migrate, db (rede interna) e db-test
+compose.dev.yaml                  só dev: publica o banco em 127.0.0.1:5433
 docs/                             requisitos, contratos, contabilidade e decisões
 tests/unit/                       regras isoladas
 tests/integration/                persistência PostgreSQL e fluxos HTTP

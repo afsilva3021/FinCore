@@ -1,0 +1,22 @@
+# Nada de segredos, ambiente local ou artefatos na imagem.
+.env
+.env.*
+!.env.example
+.git
+.github
+.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+dist
+build
+tests
+docs
+*.md
+!README.md
+compose*.yaml
+Dockerfile
+.dockerignore

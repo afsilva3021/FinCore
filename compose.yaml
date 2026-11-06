@@ -1,3 +1,20 @@
+# FinCore: aplicação e banco em containers separados.
+#
+# Redes:
+#   backend  (internal) -> só db, migrate e app. Sem saída para a internet e sem porta no host.
+#   frontend            -> só o app; publica a porta HTTP e permite saída (ex.: ViaCEP).
+# O banco nunca fica na rede frontend, então não é alcançável de fora nem pelo host.
+#
+# Usuários do banco:
+#   POSTGRES_USER (dono) -> usado só pelo serviço migrate, que roda e termina.
+#   APP_DB_USER          -> usado pelo app; apenas SELECT/INSERT/UPDATE/DELETE, sem DDL.
+#
+# Uso: cp .env.example .env  (troque as senhas e o AUTH_SECRET)  &&  docker compose up -d --build
+
+x-app-image: &app-image
+  build: .
+  image: fincore-app:local
+
 services:
   db:
     image: postgres:16-alpine
@@ -6,15 +23,67 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-fincore}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
       POSTGRES_DB: ${POSTGRES_DB:-fincore}
-    ports:
-      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks: [backend]
+    security_opt: ["no-new-privileges:true"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Passo único a cada subida: aplica migrations e garante o usuário restrito do app.
+  migrate:
+    <<: *app-image
+    command:
+      - sh
+      - -c
+      - tortoise -c fincore.config.database.TORTOISE_ORM migrate && fincore-setup-app-db-role
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-fincore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-fincore}
+      APP_DB_USER: ${APP_DB_USER:-fincore_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Defina APP_DB_PASSWORD no .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [backend]
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  app:
+    <<: *app-image
+    restart: unless-stopped
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${APP_DB_USER:-fincore_app}
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:?Defina APP_DB_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-fincore}
+      AUTH_SECRET: ${AUTH_SECRET:?Defina AUTH_SECRET no .env}
+      SECURE_COOKIES: ${SECURE_COOKIES:-false}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    init: true
+    networks: [backend, frontend]
+    ports:
+      # Só no host local. Em produção, coloque um proxy HTTPS na frente (veja o README).
+      - "${APP_BIND:-127.0.0.1}:${APP_PUBLISHED_PORT:-8080}:8080"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
   db-test:
     image: postgres:16-alpine
@@ -32,6 +101,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+networks:
+  backend:
+    internal: true
+  frontend: {}
 
 volumes:
   pgdata:

@@ -21,14 +21,31 @@ def _database_url() -> str:
     return f"postgres://{username}:{password}@{host}:{port}/{database}"
 
 
+DEFAULT_AUTH_SECRET = "local-development-key-change-before-deploying"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     host: str = os.getenv("APP_HOST", "127.0.0.1")
     port: int = int(os.getenv("APP_PORT", "8080"))
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     database_url: str = _database_url()
-    auth_secret: str = os.getenv("AUTH_SECRET", "local-development-key-change-before-deploying")
+    auth_secret: str = os.getenv("AUTH_SECRET", DEFAULT_AUTH_SECRET)
     secure_cookies: bool = os.getenv("SECURE_COOKIES", "false").lower() == "true"
+
+
+def startup_problems(config: Settings) -> list[str]:
+    """Configurações inseguras que impedem a aplicação de subir exposta na rede."""
+    problems: list[str] = []
+    exposed = config.host not in LOOPBACK_HOSTS
+    if exposed and (config.auth_secret == DEFAULT_AUTH_SECRET or len(config.auth_secret) < 32):
+        problems.append(
+            "AUTH_SECRET precisa ser trocado (32+ caracteres aleatórios) quando APP_HOST "
+            "não é local. Gere um com: "
+            'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
+    return problems
 
 
 settings = Settings()
