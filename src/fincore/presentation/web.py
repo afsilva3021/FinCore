@@ -77,6 +77,9 @@ from fincore.presentation.health import database_is_ready
 COOKIE_AUTH = "fincore_session"
 COOKIE_CSRF = "fincore_csrf"
 SESSION_TTL_SECONDS = 60 * 60 * 12
+# O token CSRF precisa durar tanto quanto a sessão; senão os formulários passam a
+# falhar silenciosamente depois que o cookie CSRF expira com a sessão ainda válida.
+CSRF_TTL_SECONDS = SESSION_TTL_SECONDS
 serializer = URLSafeTimedSerializer(settings.auth_secret)
 csrf_serializer = URLSafeTimedSerializer(settings.auth_secret, salt="fincore-csrf")
 template_env = Environment(
@@ -117,7 +120,7 @@ def _set_cookie(response: Response, name: str, value: str, max_age: int) -> None
 
 
 def _csrf_cookie(response: Response, token: str) -> None:
-    _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(token), 60 * 60)
+    _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(token), CSRF_TTL_SECONDS)
 
 
 def _valid_csrf(request: Request, submitted: str) -> bool:
@@ -125,10 +128,10 @@ def _valid_csrf(request: Request, submitted: str) -> bool:
     if not cookie_value or not submitted:
         return False
     try:
-        cookie_token = csrf_serializer.loads(cookie_value, max_age=60 * 60)
+        cookie_token = csrf_serializer.loads(cookie_value, max_age=CSRF_TTL_SECONDS)
     except BadSignature, SignatureExpired:
         return False
-    return cookie_token == submitted
+    return secrets.compare_digest(str(cookie_token).encode(), submitted.encode())
 
 
 async def _current_user(request: Request) -> tuple[User, Membership] | None:
@@ -170,7 +173,7 @@ def register_web_routes(app: object) -> None:
     async def login_page(request: Request) -> Response:
         csrf = secrets.token_urlsafe(24)
         response = _response(_page("auth/login.html", csrf=csrf, error=None))
-        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), 60 * 60)
+        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), CSRF_TTL_SECONDS)
         return response
 
     @app.post("/login")
@@ -178,7 +181,7 @@ def register_web_routes(app: object) -> None:
         form = _form_data(request)
         csrf_cookie = _cookie_value(request, COOKIE_CSRF)
         try:
-            expected_csrf = csrf_serializer.loads(csrf_cookie or "", max_age=60 * 60)
+            expected_csrf = csrf_serializer.loads(csrf_cookie or "", max_age=CSRF_TTL_SECONDS)
         except BadSignature, SignatureExpired:
             expected_csrf = None
         if expected_csrf is None or expected_csrf != form.get("csrf"):
@@ -200,19 +203,20 @@ def register_web_routes(app: object) -> None:
                 ),
                 401,
             )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, 60 * 60)
+            _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
             return response
         user, membership = result
         token = serializer.dumps({"uid": str(user.id), "org": str(membership.organization_id)})
         response = _redirect("/dashboard")
         _set_cookie(response, COOKIE_AUTH, token, SESSION_TTL_SECONDS)
+        _csrf_cookie(response, secrets.token_urlsafe(24))
         return response
 
     @app.get("/register")
     async def register_page(request: Request) -> Response:
         csrf = secrets.token_urlsafe(24)
         response = _response(_page("auth/register.html", csrf=csrf, error=None))
-        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), 60 * 60)
+        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), CSRF_TTL_SECONDS)
         return response
 
     @app.post("/register")
@@ -220,7 +224,7 @@ def register_web_routes(app: object) -> None:
         form = _form_data(request)
         csrf_cookie = _cookie_value(request, COOKIE_CSRF)
         try:
-            expected_csrf = csrf_serializer.loads(csrf_cookie or "", max_age=60 * 60)
+            expected_csrf = csrf_serializer.loads(csrf_cookie or "", max_age=CSRF_TTL_SECONDS)
         except BadSignature, SignatureExpired:
             expected_csrf = None
         if expected_csrf is None or expected_csrf != form.get("csrf"):
@@ -245,7 +249,7 @@ def register_web_routes(app: object) -> None:
                 ),
                 400,
             )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, 60 * 60)
+            _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
             return response
         try:
             user = await register_user(full_name, email, password, organization)
@@ -253,7 +257,7 @@ def register_web_routes(app: object) -> None:
             response = _response(
                 _page("auth/register.html", csrf=expected_csrf, error=str(exc)), 400
             )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, 60 * 60)
+            _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
             return response
         except IntegrityError:
             response = _response(
@@ -264,12 +268,13 @@ def register_web_routes(app: object) -> None:
                 ),
                 409,
             )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, 60 * 60)
+            _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
             return response
         membership = await Membership.filter(user=user, is_active=True).first()
         response = _redirect("/dashboard")
         session = serializer.dumps({"uid": str(user.id), "org": str(membership.organization_id)})
         _set_cookie(response, COOKIE_AUTH, session, SESSION_TTL_SECONDS)
+        _csrf_cookie(response, secrets.token_urlsafe(24))
         return response
 
     @app.post("/logout")
@@ -329,7 +334,7 @@ def _csrf_from_auth(request: Request) -> str:
     if not cookie_value:
         return ""
     try:
-        return csrf_serializer.loads(cookie_value, max_age=60 * 60)
+        return csrf_serializer.loads(cookie_value, max_age=CSRF_TTL_SECONDS)
     except BadSignature, SignatureExpired:
         return ""
 
@@ -1503,7 +1508,7 @@ def register_api_routes(app: object) -> None:
             return error_response("unauthenticated", "Sessão necessária.", 401)
         token = secrets.token_urlsafe(32)
         response = json_response({"csrf_token": token})
-        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(token), 60 * 60)
+        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(token), CSRF_TTL_SECONDS)
         return response
 
     @app.get("/api/v1/accounts")
