@@ -162,6 +162,29 @@ def _page(template: str, **context: object) -> str:
     return template_env.get_template(template).render(**context)
 
 
+def _form_uuid(form: dict[str, str], key: str, message: str) -> UUID:
+    """Lê um UUID do formulário trocando a mensagem técnica por uma em pt-BR."""
+    try:
+        return UUID(form.get(key, ""))
+    except ValueError:
+        raise ValueError(message) from None
+
+
+def _form_date(form: dict[str, str], key: str, message: str) -> date:
+    try:
+        return date.fromisoformat(form.get(key, ""))
+    except ValueError:
+        raise ValueError(message) from None
+
+
+async def _title_from_path(request: Request, organization: Organization) -> FinancialTitle | None:
+    try:
+        title_id = UUID(request.path_params["title_id"])
+    except KeyError, ValueError:
+        return None
+    return await FinancialTitle.get_or_none(id=title_id, organization=organization)
+
+
 def register_web_routes(app: object) -> None:
     @app.get("/")
     async def home(request: Request) -> Response:
@@ -742,24 +765,26 @@ def register_finance_routes(app: object) -> None:
             return _redirect("/login")
         form = _form_data(request)
         organization = await current[1].organization
+        title = await _title_from_path(request, organization)
+        title_type = title.title_type if title else "payable"
+        target = "/payables" if title_type == "payable" else "/receivables"
         if not _valid_csrf(request, form.get("csrf", "")):
-            return _redirect("/payables")
-        title_type = "payable"
+            return _redirect(target)
         try:
-            title_id = UUID(request.path_params["title_id"])
-            title = await FinancialTitle.get_or_none(id=title_id, organization=organization)
             if title is None:
                 raise ValueError("Título não encontrado nesta organização.")
-            title_type = title.title_type
-            target = "/payables" if title.title_type == "payable" else "/receivables"
             await settle_title(
                 organization=organization,
                 user=current[0],
-                title_id=title_id,
-                operation_key=UUID(form.get("operation_key", "")),
+                title_id=title.id,
+                operation_key=_form_uuid(
+                    form, "operation_key", "Atualize a página e tente a baixa novamente."
+                ),
                 amount_applied=parse_money(form.get("amount_applied", "")),
-                paid_on=date.fromisoformat(form.get("paid_on", "")),
-                account_id=UUID(form.get("account_id", "")),
+                paid_on=_form_date(form, "paid_on", "Informe uma data de pagamento válida."),
+                account_id=_form_uuid(
+                    form, "account_id", "Selecione uma conta financeira válida para a baixa."
+                ),
                 payment_method=form.get("payment_method", "other"),
                 discount=parse_adjustment(form.get("discount", "0")),
                 interest=parse_adjustment(form.get("interest", "0")),
@@ -769,14 +794,10 @@ def register_finance_routes(app: object) -> None:
                 notes=form.get("notes", ""),
             )
             return _redirect(target)
-        except ValueError, KeyError:
+        except ValueError as exc:
             return _response(
                 await _render_title_register(
-                    request,
-                    current[0],
-                    organization,
-                    title_type,
-                    "Confira os dados da baixa e o saldo em aberto do título.",
+                    request, current[0], organization, title_type, str(exc)
                 ),
                 400,
             )
@@ -788,16 +809,23 @@ def register_finance_routes(app: object) -> None:
             return _redirect("/login")
         form = _form_data(request)
         organization = await current[1].organization
+        title = await _title_from_path(request, organization)
+        title_type = title.title_type if title else "payable"
+        target = "/payables" if title_type == "payable" else "/receivables"
         if not _valid_csrf(request, form.get("csrf", "")):
-            return _redirect("/payables")
+            return _redirect(target)
         try:
-            title = await cancel_title(
-                organization=organization,
-                title_id=UUID(request.path_params["title_id"]),
+            if title is None:
+                raise ValueError("Título não encontrado nesta organização.")
+            await cancel_title(organization=organization, title_id=title.id)
+            return _redirect(target)
+        except ValueError as exc:
+            return _response(
+                await _render_title_register(
+                    request, current[0], organization, title_type, str(exc)
+                ),
+                400,
             )
-            return _redirect("/payables" if title.title_type == "payable" else "/receivables")
-        except ValueError, KeyError:
-            return _redirect("/payables")
 
     @app.post("/transactions")
     async def create_transaction_page(request: Request) -> Response:
