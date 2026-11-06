@@ -1,12 +1,13 @@
 """Casos de uso do núcleo financeiro, sempre limitados à organização ativa."""
 
 from datetime import UTC, date, datetime
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
+from fincore.application.money import parse_brl
 from fincore.infrastructure.models import (
     Category,
     FinancialAccount,
@@ -23,30 +24,24 @@ CENT = Decimal("0.01")
 
 def parse_money(value: str) -> Decimal:
     """Converte valor decimal pt-BR ou padrão sem aceitar float ou negativos."""
-    normalized = value.strip().replace("R$", "").replace(" ", "")
-    if "," in normalized:
-        normalized = normalized.replace(".", "").replace(",", ".")
-    try:
-        amount = Decimal(normalized).quantize(CENT, rounding=ROUND_HALF_UP)
-    except (InvalidOperation, ValueError) as exc:
-        raise ValueError("Informe um valor monetário válido.") from exc
-    if not amount.is_finite() or amount <= 0 or amount > Decimal("9999999999999.99"):
-        raise ValueError("O valor deve ser maior que zero e respeitar o limite permitido.")
-    return amount
+    return parse_brl(
+        value,
+        allow_zero=False,
+        empty_as_zero=False,
+        invalid_message="Informe um valor monetário válido.",
+        range_message="O valor deve ser maior que zero e respeitar o limite permitido.",
+    )
 
 
 def parse_opening_balance(value: str) -> Decimal:
     """Converte saldo inicial, aceitando zero e rejeitando valores negativos."""
-    normalized = value.strip().replace("R$", "").replace(" ", "")
-    if "," in normalized:
-        normalized = normalized.replace(".", "").replace(",", ".")
-    try:
-        amount = Decimal(normalized or "0").quantize(CENT, rounding=ROUND_HALF_UP)
-    except (InvalidOperation, ValueError) as exc:
-        raise ValueError("Informe um saldo inicial válido.") from exc
-    if not amount.is_finite() or amount < 0 or amount > Decimal("9999999999999.99"):
-        raise ValueError("O saldo inicial deve ser positivo e respeitar o limite permitido.")
-    return amount
+    return parse_brl(
+        value,
+        allow_zero=True,
+        empty_as_zero=True,
+        invalid_message="Informe um saldo inicial válido.",
+        range_message="O saldo inicial deve ser positivo e respeitar o limite permitido.",
+    )
 
 
 async def _system_account(

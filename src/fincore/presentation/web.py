@@ -42,6 +42,7 @@ from fincore.application.finance import (
     settle_movement,
 )
 from fincore.application.identity import authenticate, register_user
+from fincore.application.money import parse_api_amount
 from fincore.application.reconciliation import (
     import_ofx,
     match_statement_transaction,
@@ -1726,7 +1727,7 @@ def register_api_routes(app: object) -> None:
                 raise ValueError("Informe descrição e amount como string decimal.")
             if not isinstance(competence_value, str):
                 raise ValueError("Informe competence_date no formato AAAA-MM-DD.")
-            amount = parse_money(amount_value)
+            amount = parse_api_amount(amount_value)
             competence_date = date.fromisoformat(competence_value)
             if transaction_type == "transfer":
                 target_id = UUID(str(payload.get("target_account_id", "")))

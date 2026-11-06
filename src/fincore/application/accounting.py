@@ -1,12 +1,13 @@
 """Regras de plano de contas, partidas dobradas e estornos imutáveis."""
 
 from datetime import UTC, date, datetime
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal
 from uuid import UUID
 
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
+from fincore.application.money import parse_brl
 from fincore.infrastructure.models import (
     JournalEntry,
     JournalEntryLine,
@@ -20,16 +21,13 @@ ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense"}
 
 
 def parse_line_amount(value: str) -> Decimal:
-    normalized = value.strip().replace("R$", "").replace(" ", "")
-    if "," in normalized:
-        normalized = normalized.replace(".", "").replace(",", ".")
-    try:
-        amount = Decimal(normalized or "0").quantize(CENT, rounding=ROUND_HALF_UP)
-    except (InvalidOperation, ValueError) as exc:
-        raise ValueError("Informe valores de débito e crédito válidos.") from exc
-    if not amount.is_finite() or amount < 0 or amount > Decimal("9999999999999.99"):
-        raise ValueError("Débitos e créditos devem ser valores positivos válidos.")
-    return amount
+    return parse_brl(
+        value,
+        allow_zero=True,
+        empty_as_zero=True,
+        invalid_message="Informe valores de débito e crédito válidos.",
+        range_message="Débitos e créditos devem ser valores positivos válidos.",
+    )
 
 
 async def _validated_lines(

@@ -2,13 +2,14 @@
 
 import calendar
 from datetime import UTC, date, datetime
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID, uuid4
 
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
 from fincore.application.finance import _create_movement_journal
+from fincore.application.money import parse_brl
 from fincore.infrastructure.models import (
     Category,
     Counterparty,
@@ -47,16 +48,13 @@ def _validate_adjustment(value: Decimal, label: str) -> Decimal:
 
 
 def parse_adjustment(value: str) -> Decimal:
-    normalized = value.strip().replace("R$", "").replace(" ", "")
-    if "," in normalized:
-        normalized = normalized.replace(".", "").replace(",", ".")
-    try:
-        amount = Decimal(normalized or "0").quantize(CENT, rounding=ROUND_HALF_UP)
-    except (InvalidOperation, ValueError) as exc:
-        raise ValueError("Informe um ajuste monetário válido.") from exc
-    if not amount.is_finite() or amount < 0 or amount > MAX_AMOUNT:
-        raise ValueError("Ajustes devem ser valores iguais ou superiores a zero.")
-    return amount
+    return parse_brl(
+        value,
+        allow_zero=True,
+        empty_as_zero=True,
+        invalid_message="Informe um ajuste monetário válido.",
+        range_message="Ajustes devem ser valores iguais ou superiores a zero.",
+    )
 
 
 async def create_titles(
