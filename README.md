@@ -10,11 +10,25 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0014`; migrations são aditivas e preservam registros.
+- Migrations versionadas até `0015`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
 - O modelo de títulos é separado das transações. O cadastro de título não altera o extrato ou saldos; sua baixa cria uma movimentação vinculada.
+
+## Atualizações recentes
+
+Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](docs/progress.md). Toda implementação ou melhoria deve acrescentar uma linha aqui.
+
+| Data | Mudança |
+|---|---|
+| 2026-11-06 | Ícones de mostrar/ocultar senha também no cadastro; senhas dos testes de integração ajustadas à política de senha. |
+| 2026-11-05 | Contatos (clientes/fornecedores) com CPF/CNPJ, endereço via CEP, inativação; dados bancários nas contas financeiras (migrations `0014` e `0015`). |
+| 2026-11-05 | Cadastro com confirmação de senha e política de força validada no servidor. |
+| 2026-11-05 | Valores pt-BR: `1.500` passa a ser lido como R$ 1.500,00 (antes, R$ 1,50). |
+| 2026-11-05 | Token CSRF dura o mesmo que a sessão; formulários não falham mais em silêncio após 1 hora. |
+| 2026-11-05 | Totais de receitas e despesas abatem estornos e são somados no banco. |
+| 2026-11-05 | Baixa e cancelamento de título mostram o motivo real da recusa. |
 
 ## Stack e arquitetura atuais
 
@@ -35,7 +49,8 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 ### Identidade e organização
 
 - Cadastro de usuário e organização, login e logout.
-- Hash Argon2id, sessão assinada, cookies HttpOnly/SameSite e CSRF.
+- Hash Argon2id, sessão assinada (12 h), cookies HttpOnly/SameSite e CSRF com a mesma duração da sessão, renovado no login/cadastro.
+- Cadastro exige confirmação de senha e senha de 12 a 128 caracteres com pelo menos 3 tipos (minúscula, maiúscula, número, símbolo), sem conter o nome ou o início do e-mail. A regra fica no servidor (`application/identity.py`); a página apenas a espelha para retorno imediato.
 - Isolamento de contas, categorias, movimentações, títulos, conciliações e relatórios por organização.
 - Cadastro próprio de clientes e fornecedores em `/customers` e `/suppliers`, com CPF/CNPJ, endereço, contato, inativação e reativação.
 - Consulta de endereço por CEP via ViaCEP, acionada pelo formulário de contato; os campos também podem ser preenchidos manualmente.
@@ -47,6 +62,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - Receitas, despesas, transferências, movimentos em aberto, liquidação, extrato interno, idempotência e estornos compensatórios.
 - Uma transferência cria movimentos pareados de origem/destino, sem gerar receita ou despesa.
 - Valores monetários usam `Decimal` no backend e `NUMERIC(15,2)` no banco; nunca usar `float` para dinheiro.
+- Formulários aceitam valores em pt-BR (`1.500`, `1.234,56`, `R$ 1.500,00`): ponto entre grupos de 3 dígitos é milhar e vírgula é decimal; formatos ambíguos (`1,000.50`) são recusados. A API JSON usa a notação decimal canônica (`"250.00"`). Regras em `application/money.py`.
 
 **Transações e títulos não são o mesmo cadastro.** Uma transação representa um movimento financeiro que aparece no extrato; um título representa uma obrigação a pagar ou um recebível. Não transformar títulos em tipos, filtros ou aliases de transações.
 
@@ -59,7 +75,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - Campos específicos a receber: pedido/contrato/venda, meio e data de envio da cobrança, previsão de recebimento e link/identificador.
 - Parcelas são títulos próprios, ligadas por grupo, e preservam o total com valores decimais exatos.
 - Baixas parciais/finais guardam valor aplicado, data, desconto, juros, multa, tarifas, valor líquido, conta, forma e referência do comprovante. O saldo é derivado dos valores aplicados.
-- Baixa e transação do extrato são gravadas atomicamente; títulos sem baixa não alteram saldo. Cancelamento é permitido somente para título aberto sem baixa. Títulos com baixa não são excluídos fisicamente.
+- Baixa e transação do extrato são gravadas atomicamente; títulos sem baixa não alteram saldo. Cancelamento é permitido somente para título aberto sem baixa. Títulos com baixa não são excluídos fisicamente. Quando uma baixa ou cancelamento é recusado, a página do tipo do título (a pagar/receber) mostra o motivo.
 - Anexos, cobrança, comprovante, aprovação e dados bancários são referências informadas pelo usuário. Não há upload de arquivos, processo de aprovação nem conexão de pagamento implementados.
 
 ### Contabilidade
@@ -75,6 +91,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - Importação de OFX 1.x SGML para uma conta selecionada, deduplicação por FITID, revisão manual, conciliar/desconciliar e auditoria.
 - Match exige conta, data e valor correspondentes; divergências são rejeitadas.
 - Relatórios por período, exportação CSV e PDF.
+- Totais de receitas e despesas (visão geral e relatórios) consideram só movimentos liquidados e abatem estornos da natureza do movimento original; o estorno entra no período da sua própria data. Transferências não entram nesses totais.
 - Limites OFX: não processa OFX 2.x XML, múltiplas contas no mesmo arquivo, conversão de moeda ou upload multipart.
 
 ### API e demonstrações
@@ -184,7 +201,8 @@ node --check static/js/app.js
 
 - A sequência versionada fica em `src/fincore/infrastructure/migrations/`.
 - Para gerar uma migration depois de alterar modelos, inspecione o diff e rode `uv run tortoise -c fincore.config.database.TORTOISE_ORM makemigrations`.
-- Aplique com `uv run tortoise -c fincore.config.database.TORTOISE_ORM migrate`.
+- Aplique com `uv run tortoise -c fincore.config.database.TORTOISE_ORM migrate`. Faça isso sempre depois de `git pull`: subir a aplicação com migrations pendentes causa erros como `column ... does not exist`.
+- Para conferir se os models e as migrations estão alinhados, `makemigrations` deve responder `No changes detected`.
 - Em teste, defina `DATABASE_URL` para o serviço de teste antes dos comandos.
 - Antes de uma mudança, leia as migrations existentes, preserve registros e inclua teste de compatibilidade. Não use `generate_schemas()` como migration de produção.
 
@@ -193,7 +211,8 @@ node --check static/js/app.js
 ```text
 src/fincore/
   app.py                         inicialização Robyn, health e lifecycle ORM
-  application/                   casos de uso financeiro, contábil, títulos e OFX
+  application/                   casos de uso financeiro, contábil, títulos, contatos e OFX
+  application/money.py           conversão de valores pt-BR e da API para Decimal
   config/                        variáveis de ambiente e conexão ORM
   infrastructure/                 modelos Tortoise e migrations versionadas
   presentation/                   health e rotas server-rendered/API

@@ -246,6 +246,7 @@ Registrar em `docs/progress.md` o que foi implementado, validado, pendências e 
 9. Antes de modificar, inspecione código, migrations, documentação, status do Git e ambiente. Preserve arquivos e dados preexistentes.
 10. Faça as alterações necessárias até deixá-las implementadas, documentadas e verificáveis; não pare em plano ou tela de demonstração quando a tarefa pedir funcionalidade completa.
 11. Mantenha `README.md` como guia executável de setup e `docs/progress.md` como registro verdadeiro de validação. Só marque funcionalidade como pronta após executar seus critérios.
+12. **Toda implementação, correção ou melhoria atualiza o `README.md` no mesmo commit:** acrescente uma linha na tabela "Atualizações recentes" e ajuste as seções afetadas (funcionalidades, número da última migration, comandos, estrutura). Não faça commit de mudança de comportamento sem a atualização correspondente do README.
 
 ## 11. Como começar
 

@@ -528,7 +528,7 @@ async def test_contact_crud_roles_isolation_and_reactivation() -> None:
     user = await register_user(
         "Cadastro de contatos",
         f"contatos-{suffix}@example.test",
-        "senha-contatos-integracao-123",
+        "Agenda-Integracao-123",
         "Organização de contatos",
     )
     membership = await Membership.filter(user=user).first()
@@ -582,7 +582,7 @@ async def test_contact_crud_roles_isolation_and_reactivation() -> None:
     other_org_user = await register_user(
         "Outra pessoa",
         f"outra-org-{suffix}@example.test",
-        "senha-outra-org-123",
+        "Isolamento-Org-123",
         "Outra organização",
     )
     other_membership = await Membership.filter(user=other_org_user).first()
