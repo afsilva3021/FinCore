@@ -103,7 +103,7 @@ async def test_invalid_password_does_not_authenticate() -> None:
 async def test_synthetic_categories_group_analytic_subcategories_and_balances() -> None:
     suffix = uuid4().hex
     user = await register_user(
-        "Plano", f"plano-{suffix}@example.test", "senha-plano-123456", "Org Plano"
+        "Plano", f"plano-{suffix}@example.test", "senha-hierarquia-123", "Org Plano"
     )
     membership = await Membership.filter(user=user).first()
     assert membership is not None
@@ -801,7 +801,7 @@ async def test_title_installments_and_partial_settlement_create_linked_movement(
     user = await register_user(
         "Baixas de Títulos",
         f"baixas-{suffix}@example.test",
-        "senha-baixas-integracao-123",
+        "senha-parcelas-integracao-123",
         "Organização de Baixas",
     )
     membership = await Membership.filter(user=user).first()

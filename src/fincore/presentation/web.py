@@ -49,13 +49,14 @@ from fincore.application.finance import (
     settle_movement,
     update_account,
 )
-from fincore.application.identity import authenticate, register_user
+from fincore.application.identity import PASSWORD_RULES_TEXT, authenticate, register_user
+from fincore.application.money import parse_api_amount
 from fincore.application.reconciliation import (
     import_ofx,
     match_statement_transaction,
     unmatch_statement_transaction,
 )
-from fincore.application.reports import transaction_report
+from fincore.application.reports import realized_totals, transaction_report
 from fincore.application.simulated_integrations import simulate_adapter
 from fincore.application.titles import (
     cancel_title,
@@ -85,6 +86,9 @@ from fincore.presentation.health import database_is_ready
 COOKIE_AUTH = "fincore_session"
 COOKIE_CSRF = "fincore_csrf"
 SESSION_TTL_SECONDS = 60 * 60 * 12
+# O token CSRF precisa durar tanto quanto a sessão; senão os formulários passam a
+# falhar silenciosamente depois que o cookie CSRF expira com a sessão ainda válida.
+CSRF_TTL_SECONDS = SESSION_TTL_SECONDS
 serializer = URLSafeTimedSerializer(settings.auth_secret)
 csrf_serializer = URLSafeTimedSerializer(settings.auth_secret, salt="fincore-csrf")
 template_env = Environment(
@@ -139,7 +143,7 @@ def _set_cookie(response: Response, name: str, value: str, max_age: int) -> None
 
 
 def _csrf_cookie(response: Response, token: str) -> None:
-    _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(token), 60 * 60)
+    _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(token), CSRF_TTL_SECONDS)
 
 
 def _valid_csrf(request: Request, submitted: str) -> bool:
@@ -147,10 +151,10 @@ def _valid_csrf(request: Request, submitted: str) -> bool:
     if not cookie_value or not submitted:
         return False
     try:
-        cookie_token = csrf_serializer.loads(cookie_value, max_age=60 * 60)
+        cookie_token = csrf_serializer.loads(cookie_value, max_age=CSRF_TTL_SECONDS)
     except BadSignature, SignatureExpired:
         return False
-    return cookie_token == submitted
+    return secrets.compare_digest(str(cookie_token).encode(), submitted.encode())
 
 
 async def _current_user(request: Request) -> tuple[User, Membership] | None:
@@ -181,6 +185,29 @@ def _page(template: str, **context: object) -> str:
     return template_env.get_template(template).render(**context)
 
 
+def _form_uuid(form: dict[str, str], key: str, message: str) -> UUID:
+    """Lê um UUID do formulário trocando a mensagem técnica por uma em pt-BR."""
+    try:
+        return UUID(form.get(key, ""))
+    except ValueError:
+        raise ValueError(message) from None
+
+
+def _form_date(form: dict[str, str], key: str, message: str) -> date:
+    try:
+        return date.fromisoformat(form.get(key, ""))
+    except ValueError:
+        raise ValueError(message) from None
+
+
+async def _title_from_path(request: Request, organization: Organization) -> FinancialTitle | None:
+    try:
+        title_id = UUID(request.path_params["title_id"])
+    except KeyError, ValueError:
+        return None
+    return await FinancialTitle.get_or_none(id=title_id, organization=organization)
+
+
 def register_web_routes(app: object) -> None:
     @app.get("/")
     async def home(request: Request) -> Response:
@@ -192,7 +219,7 @@ def register_web_routes(app: object) -> None:
     async def login_page(request: Request) -> Response:
         csrf = secrets.token_urlsafe(24)
         response = _response(_page("auth/login.html", csrf=csrf, error=None))
-        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), 60 * 60)
+        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), CSRF_TTL_SECONDS)
         return response
 
     @app.post("/login")
@@ -200,7 +227,7 @@ def register_web_routes(app: object) -> None:
         form = _form_data(request)
         csrf_cookie = _cookie_value(request, COOKIE_CSRF)
         try:
-            expected_csrf = csrf_serializer.loads(csrf_cookie or "", max_age=60 * 60)
+            expected_csrf = csrf_serializer.loads(csrf_cookie or "", max_age=CSRF_TTL_SECONDS)
         except BadSignature, SignatureExpired:
             expected_csrf = None
         if expected_csrf is None or expected_csrf != form.get("csrf"):
@@ -222,19 +249,28 @@ def register_web_routes(app: object) -> None:
                 ),
                 401,
             )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, 60 * 60)
+            _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
             return response
         user, membership = result
         token = serializer.dumps({"uid": str(user.id), "org": str(membership.organization_id)})
         response = _redirect("/dashboard")
         _set_cookie(response, COOKIE_AUTH, token, SESSION_TTL_SECONDS)
+        _csrf_cookie(response, secrets.token_urlsafe(24))
         return response
 
     @app.get("/register")
     async def register_page(request: Request) -> Response:
         csrf = secrets.token_urlsafe(24)
-        response = _response(_page("auth/register.html", csrf=csrf, error=None))
-        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), 60 * 60)
+        response = _response(
+            _page(
+                "auth/register.html",
+                csrf=csrf,
+                error=None,
+                form={},
+                password_rules=PASSWORD_RULES_TEXT,
+            )
+        )
+        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), CSRF_TTL_SECONDS)
         return response
 
     @app.post("/register")
@@ -242,7 +278,7 @@ def register_web_routes(app: object) -> None:
         form = _form_data(request)
         csrf_cookie = _cookie_value(request, COOKIE_CSRF)
         try:
-            expected_csrf = csrf_serializer.loads(csrf_cookie or "", max_age=60 * 60)
+            expected_csrf = csrf_serializer.loads(csrf_cookie or "", max_age=CSRF_TTL_SECONDS)
         except BadSignature, SignatureExpired:
             expected_csrf = None
         if expected_csrf is None or expected_csrf != form.get("csrf"):
@@ -251,6 +287,8 @@ def register_web_routes(app: object) -> None:
                     "auth/register.html",
                     csrf="",
                     error="Atualize a página e tente novamente.",
+                    form={},
+                    password_rules=PASSWORD_RULES_TEXT,
                 ),
                 400,
             )
@@ -258,40 +296,39 @@ def register_web_routes(app: object) -> None:
         email = form.get("email", "").strip().lower()
         organization = form.get("organization", "").strip()
         password = form.get("password", "")
-        if not all((full_name, email, organization)) or not 12 <= len(password) <= 128:
+        password_confirm = form.get("password_confirm", "")
+        # Os campos preenchidos voltam ao formulário em caso de erro; as senhas, nunca.
+        filled = {"full_name": full_name, "email": email, "organization": organization}
+
+        def register_error(message: str, status: int) -> Response:
             response = _response(
                 _page(
                     "auth/register.html",
                     csrf=expected_csrf,
-                    error="Preencha os campos e use uma senha com pelo menos 12 caracteres.",
+                    error=message,
+                    form=filled,
+                    password_rules=PASSWORD_RULES_TEXT,
                 ),
-                400,
+                status,
             )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, 60 * 60)
+            _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
             return response
+
+        if not all((full_name, email, organization)):
+            return register_error("Preencha nome, organização e e-mail.", 400)
+        if not secrets.compare_digest(password.encode(), password_confirm.encode()):
+            return register_error("A confirmação de senha não confere com a senha.", 400)
         try:
             user = await register_user(full_name, email, password, organization)
         except ValueError as exc:
-            response = _response(
-                _page("auth/register.html", csrf=expected_csrf, error=str(exc)), 400
-            )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, 60 * 60)
-            return response
+            return register_error(str(exc), 400)
         except IntegrityError:
-            response = _response(
-                _page(
-                    "auth/register.html",
-                    csrf=expected_csrf,
-                    error="Este e-mail já está cadastrado.",
-                ),
-                409,
-            )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, 60 * 60)
-            return response
+            return register_error("Este e-mail já está cadastrado.", 409)
         membership = await Membership.filter(user=user, is_active=True).first()
         response = _redirect("/dashboard")
         session = serializer.dumps({"uid": str(user.id), "org": str(membership.organization_id)})
         _set_cookie(response, COOKIE_AUTH, session, SESSION_TTL_SECONDS)
+        _csrf_cookie(response, secrets.token_urlsafe(24))
         return response
 
     @app.post("/logout")
@@ -311,23 +348,10 @@ def register_web_routes(app: object) -> None:
         user, membership = current
         organization = await membership.organization
         balances = await get_account_balances(organization)
-        movements = await FinancialTransaction.filter(organization=organization).all()
-        income = sum(
-            (
-                movement.amount
-                for movement in movements
-                if movement.transaction_type == "income" and movement.status == "settled"
-            ),
-            Decimal("0.00"),
-        )
-        expenses = sum(
-            (
-                movement.amount
-                for movement in movements
-                if movement.transaction_type == "expense" and movement.status == "settled"
-            ),
-            Decimal("0.00"),
-        )
+        income, expenses = await realized_totals(organization)
+        open_count = await FinancialTransaction.filter(
+            organization=organization, status="open"
+        ).count()
         return _response(
             _page(
                 "dashboard.html",
@@ -337,7 +361,7 @@ def register_web_routes(app: object) -> None:
                 total_balance=sum((balance for _, balance in balances), Decimal("0.00")),
                 income=income,
                 expenses=expenses,
-                open_count=sum(movement.status == "open" for movement in movements),
+                open_count=open_count,
                 recent=await FinancialTransaction.filter(organization=organization)
                 .select_related("account")
                 .order_by("-created_at")
@@ -351,7 +375,7 @@ def _csrf_from_auth(request: Request) -> str:
     if not cookie_value:
         return ""
     try:
-        return csrf_serializer.loads(cookie_value, max_age=60 * 60)
+        return csrf_serializer.loads(cookie_value, max_age=CSRF_TTL_SECONDS)
     except BadSignature, SignatureExpired:
         return ""
 
@@ -930,24 +954,26 @@ def register_finance_routes(app: object) -> None:
             return _redirect("/login")
         form = _form_data(request)
         organization = await current[1].organization
+        title = await _title_from_path(request, organization)
+        title_type = title.title_type if title else "payable"
+        target = "/payables" if title_type == "payable" else "/receivables"
         if not _valid_csrf(request, form.get("csrf", "")):
-            return _redirect("/payables")
-        title_type = "payable"
+            return _redirect(target)
         try:
-            title_id = UUID(request.path_params["title_id"])
-            title = await FinancialTitle.get_or_none(id=title_id, organization=organization)
             if title is None:
                 raise ValueError("Título não encontrado nesta organização.")
-            title_type = title.title_type
-            target = "/payables" if title.title_type == "payable" else "/receivables"
             await settle_title(
                 organization=organization,
                 user=current[0],
-                title_id=title_id,
-                operation_key=UUID(form.get("operation_key", "")),
+                title_id=title.id,
+                operation_key=_form_uuid(
+                    form, "operation_key", "Atualize a página e tente a baixa novamente."
+                ),
                 amount_applied=parse_money(form.get("amount_applied", "")),
-                paid_on=date.fromisoformat(form.get("paid_on", "")),
-                account_id=UUID(form.get("account_id", "")),
+                paid_on=_form_date(form, "paid_on", "Informe uma data de pagamento válida."),
+                account_id=_form_uuid(
+                    form, "account_id", "Selecione uma conta financeira válida para a baixa."
+                ),
                 payment_method=form.get("payment_method", "other"),
                 discount=parse_adjustment(form.get("discount", "0")),
                 interest=parse_adjustment(form.get("interest", "0")),
@@ -957,14 +983,10 @@ def register_finance_routes(app: object) -> None:
                 notes=form.get("notes", ""),
             )
             return _redirect(target)
-        except ValueError, KeyError:
+        except ValueError as exc:
             return _response(
                 await _render_title_register(
-                    request,
-                    current[0],
-                    organization,
-                    title_type,
-                    "Confira os dados da baixa e o saldo em aberto do título.",
+                    request, current[0], organization, title_type, str(exc)
                 ),
                 400,
             )
@@ -976,16 +998,23 @@ def register_finance_routes(app: object) -> None:
             return _redirect("/login")
         form = _form_data(request)
         organization = await current[1].organization
+        title = await _title_from_path(request, organization)
+        title_type = title.title_type if title else "payable"
+        target = "/payables" if title_type == "payable" else "/receivables"
         if not _valid_csrf(request, form.get("csrf", "")):
-            return _redirect("/payables")
+            return _redirect(target)
         try:
-            title = await cancel_title(
-                organization=organization,
-                title_id=UUID(request.path_params["title_id"]),
+            if title is None:
+                raise ValueError("Título não encontrado nesta organização.")
+            await cancel_title(organization=organization, title_id=title.id)
+            return _redirect(target)
+        except ValueError as exc:
+            return _response(
+                await _render_title_register(
+                    request, current[0], organization, title_type, str(exc)
+                ),
+                400,
             )
-            return _redirect("/payables" if title.title_type == "payable" else "/receivables")
-        except ValueError, KeyError:
-            return _redirect("/payables")
 
     @app.post("/transactions")
     async def create_transaction_page(request: Request) -> Response:
@@ -1702,7 +1731,7 @@ def register_api_routes(app: object) -> None:
             return error_response("unauthenticated", "Sessão necessária.", 401)
         token = secrets.token_urlsafe(32)
         response = json_response({"csrf_token": token})
-        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(token), 60 * 60)
+        _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(token), CSRF_TTL_SECONDS)
         return response
 
     @app.get("/api/v1/accounts")
@@ -1941,7 +1970,7 @@ def register_api_routes(app: object) -> None:
                 raise ValueError("Informe descrição e amount como string decimal.")
             if not isinstance(competence_value, str):
                 raise ValueError("Informe competence_date no formato AAAA-MM-DD.")
-            amount = parse_money(amount_value)
+            amount = parse_api_amount(amount_value)
             competence_date = date.fromisoformat(competence_value)
             if transaction_type == "transfer":
                 target_id = UUID(str(payload.get("target_account_id", "")))

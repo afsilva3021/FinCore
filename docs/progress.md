@@ -102,6 +102,7 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Migration aditiva mantém categorias e contas existentes como analíticas.
 - [x] Contratos da API e regras contábeis documentados.
 
+<<<<<<< HEAD
 ## Cadastros e consistência de interface
 
 - [x] Cadastro de clientes/fornecedores com CPF/CNPJ, endereço, contato, edição, filtro e inativação/reativação.
@@ -115,3 +116,14 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 ## UX — cadastro de subcategorias
 
 - [ ] A tela Categorias oferece ação direta para criar uma subcategoria sob o grupo sintético escolhido, com tipo e classificação analítica pré-selecionados; validação automatizada pendente.
+=======
+## Correções de revisão (2026-11-05)
+
+- [x] Valores em pt-BR: ponto separando grupos de 3 dígitos é milhar (`1.500` = R$ 1.500,00); formatos ambíguos são rejeitados. Parsers de formulário centralizados em `application/money.py`; a API mantém a notação decimal canônica (`"250.00"`).
+- [x] Token CSRF dura o mesmo que a sessão (12 h) e é rotacionado no login/cadastro; antes, formulários falhavam em silêncio depois de 1 h.
+- [x] Totais de receitas e despesas (visão geral e relatórios) abatem estornos da natureza do movimento original e são agregados no banco.
+- [x] Baixa e cancelamento de título exibem o motivo real da recusa na página do tipo correto.
+- [x] Cadastro exige confirmação de senha e aplica política de força no servidor (com retorno imediato no navegador); campos preenchidos são preservados após erro, exceto as senhas.
+- [x] Ruff e suíte completa (74 testes, com PostgreSQL de teste) aprovados.
+- [ ] Pendências levantadas na revisão: segredo `AUTH_SECRET` obrigatório fora do ambiente local, limite de tentativas de login, revogação de sessão no logout, headers de segurança, checagem de perfil (`Membership.role`), N+1 em saldos contábeis/diário e `CHECK` constraints no banco.
+>>>>>>> 552a8c89c4c1ea56746cb0baacda645697a96af0
