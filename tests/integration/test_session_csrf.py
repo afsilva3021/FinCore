@@ -42,7 +42,7 @@ def test_csrf_token_lives_as_long_as_the_session() -> None:
 async def test_forms_keep_working_after_the_first_hour_of_session(monkeypatch) -> None:
     suffix = uuid4().hex
     user = await register_user(
-        "Sessão Longa", f"sessao-{suffix}@example.test", "senha-sessao-longa-1", "Org Sessão"
+        "Sessão Longa", f"sessao-{suffix}@example.test", "senha-cookie-antigo-1", "Org Sessão"
     )
     membership = await Membership.filter(user=user).first()
     assert membership is not None

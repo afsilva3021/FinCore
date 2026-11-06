@@ -41,7 +41,7 @@ from fincore.application.finance import (
     reverse_movement,
     settle_movement,
 )
-from fincore.application.identity import authenticate, register_user
+from fincore.application.identity import PASSWORD_RULES_TEXT, authenticate, register_user
 from fincore.application.money import parse_api_amount
 from fincore.application.reconciliation import (
     import_ofx,
@@ -238,7 +238,15 @@ def register_web_routes(app: object) -> None:
     @app.get("/register")
     async def register_page(request: Request) -> Response:
         csrf = secrets.token_urlsafe(24)
-        response = _response(_page("auth/register.html", csrf=csrf, error=None))
+        response = _response(
+            _page(
+                "auth/register.html",
+                csrf=csrf,
+                error=None,
+                form={},
+                password_rules=PASSWORD_RULES_TEXT,
+            )
+        )
         _set_cookie(response, COOKIE_CSRF, csrf_serializer.dumps(csrf), CSRF_TTL_SECONDS)
         return response
 
@@ -256,6 +264,8 @@ def register_web_routes(app: object) -> None:
                     "auth/register.html",
                     csrf="",
                     error="Atualize a página e tente novamente.",
+                    form={},
+                    password_rules=PASSWORD_RULES_TEXT,
                 ),
                 400,
             )
@@ -263,36 +273,34 @@ def register_web_routes(app: object) -> None:
         email = form.get("email", "").strip().lower()
         organization = form.get("organization", "").strip()
         password = form.get("password", "")
-        if not all((full_name, email, organization)) or not 12 <= len(password) <= 128:
+        password_confirm = form.get("password_confirm", "")
+        # Os campos preenchidos voltam ao formulário em caso de erro; as senhas, nunca.
+        filled = {"full_name": full_name, "email": email, "organization": organization}
+
+        def register_error(message: str, status: int) -> Response:
             response = _response(
                 _page(
                     "auth/register.html",
                     csrf=expected_csrf,
-                    error="Preencha os campos e use uma senha com pelo menos 12 caracteres.",
+                    error=message,
+                    form=filled,
+                    password_rules=PASSWORD_RULES_TEXT,
                 ),
-                400,
+                status,
             )
             _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
             return response
+
+        if not all((full_name, email, organization)):
+            return register_error("Preencha nome, organização e e-mail.", 400)
+        if not secrets.compare_digest(password.encode(), password_confirm.encode()):
+            return register_error("A confirmação de senha não confere com a senha.", 400)
         try:
             user = await register_user(full_name, email, password, organization)
         except ValueError as exc:
-            response = _response(
-                _page("auth/register.html", csrf=expected_csrf, error=str(exc)), 400
-            )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
-            return response
+            return register_error(str(exc), 400)
         except IntegrityError:
-            response = _response(
-                _page(
-                    "auth/register.html",
-                    csrf=expected_csrf,
-                    error="Este e-mail já está cadastrado.",
-                ),
-                409,
-            )
-            _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
-            return response
+            return register_error("Este e-mail já está cadastrado.", 409)
         membership = await Membership.filter(user=user, is_active=True).first()
         response = _redirect("/dashboard")
         session = serializer.dumps({"uid": str(user.id), "org": str(membership.organization_id)})

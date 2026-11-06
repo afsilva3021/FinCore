@@ -78,8 +78,36 @@ document.querySelectorAll('.main-nav .nav-group .nav-link').forEach((link) => {
   });
 });
 
+// Espelha as regras de senha do servidor (fincore.application.identity.password_problems)
+// apenas para dar retorno imediato; a validação que vale é a do servidor.
+function passwordIsStrong(password, form) {
+  const classes = [/\p{Ll}/u, /\p{Lu}/u, /\p{Nd}/u, /[^\p{L}\p{N}]/u]
+    .filter((pattern) => pattern.test(password)).length;
+  const lowered = password.toLowerCase();
+  const email = (form.querySelector('[name="email"]')?.value || '').split('@')[0].toLowerCase();
+  const names = (form.querySelector('[name="full_name"]')?.value || '').toLowerCase().split(/\s+/);
+  const personal = [email, ...names].filter((item) => item.length >= 4);
+  return password.length >= 12 && password.length <= 128 && classes >= 3
+    && new Set([...password]).size >= 5 && !personal.some((item) => lowered.includes(item));
+}
+
+function refreshPasswordValidity(form) {
+  const password = form.querySelector('[data-password-strength]');
+  if (password) {
+    password.setCustomValidity(
+      password.value && !passwordIsStrong(password.value, form) ? 'Senha fraca' : '',
+    );
+  }
+  form.querySelectorAll('[data-password-confirm]').forEach((confirm) => {
+    const original = form.querySelector(`#${confirm.dataset.passwordConfirm}`);
+    confirm.setCustomValidity(original && confirm.value !== original.value ? 'Senhas diferentes' : '');
+  });
+}
+
 document.querySelectorAll('.needs-validation').forEach((form) => {
+  form.addEventListener('input', () => refreshPasswordValidity(form));
   form.addEventListener('submit', (event) => {
+    refreshPasswordValidity(form);
     if (!form.checkValidity()) {
       event.preventDefault();
       event.stopPropagation();

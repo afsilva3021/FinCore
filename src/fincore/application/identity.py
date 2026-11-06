@@ -9,6 +9,45 @@ from fincore.infrastructure.models import LedgerAccount, Membership, Organizatio
 
 password_hasher = PasswordHasher()
 
+PASSWORD_MIN_LENGTH = 12
+PASSWORD_MAX_LENGTH = 128
+PASSWORD_RULES_TEXT = (
+    "Use de 12 a 128 caracteres, combinando pelo menos 3 destes tipos: letra minúscula, "
+    "letra maiúscula, número e símbolo."
+)
+
+
+def password_problems(password: str, *, email: str = "", full_name: str = "") -> list[str]:
+    """Lista os motivos pelos quais a senha não é aceita (lista vazia = senha válida)."""
+    problems: list[str] = []
+    if not PASSWORD_MIN_LENGTH <= len(password) <= PASSWORD_MAX_LENGTH:
+        problems.append("A senha deve ter de 12 a 128 caracteres.")
+    classes = sum(
+        (
+            any(char.islower() for char in password),
+            any(char.isupper() for char in password),
+            any(char.isdigit() for char in password),
+            any(not char.isalnum() for char in password),
+        )
+    )
+    if classes < 3:
+        problems.append(
+            "Combine pelo menos 3 destes tipos: letra minúscula, letra maiúscula, número e símbolo."
+        )
+    if len(set(password)) < 5:
+        problems.append("A senha repete poucos caracteres diferentes; escolha uma mais variada.")
+    lowered = password.lower()
+    personal = [email.split("@")[0].lower()] + [part.lower() for part in full_name.split()]
+    if any(len(item) >= 4 and item in lowered for item in personal):
+        problems.append("A senha não pode conter seu nome ou a parte inicial do seu e-mail.")
+    return problems
+
+
+def validate_password(password: str, *, email: str = "", full_name: str = "") -> None:
+    problems = password_problems(password, email=email, full_name=full_name)
+    if problems:
+        raise ValueError(" ".join(problems))
+
 
 async def register_user(full_name: str, email: str, password: str, organization_name: str) -> User:
     """Cria uma organização e seu usuário proprietário."""
@@ -19,9 +58,9 @@ async def register_user(full_name: str, email: str, password: str, organization_
         or len(email) > 254
         or not organization_name
         or len(organization_name) > 160
-        or not 12 <= len(password) <= 128
     ):
-        raise ValueError("Confira os dados e use uma senha de 12 a 128 caracteres.")
+        raise ValueError("Confira nome, e-mail e organização.")
+    validate_password(password, email=email, full_name=full_name)
     from tortoise.transactions import in_transaction
 
     async with in_transaction():

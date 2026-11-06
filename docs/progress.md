@@ -108,5 +108,6 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Token CSRF dura o mesmo que a sessão (12 h) e é rotacionado no login/cadastro; antes, formulários falhavam em silêncio depois de 1 h.
 - [x] Totais de receitas e despesas (visão geral e relatórios) abatem estornos da natureza do movimento original e são agregados no banco.
 - [x] Baixa e cancelamento de título exibem o motivo real da recusa na página do tipo correto.
-- [x] Ruff e suíte completa (58 testes, com PostgreSQL de teste) aprovados.
+- [x] Cadastro exige confirmação de senha e aplica política de força no servidor (com retorno imediato no navegador); campos preenchidos são preservados após erro, exceto as senhas.
+- [x] Ruff e suíte completa (74 testes, com PostgreSQL de teste) aprovados.
 - [ ] Pendências levantadas na revisão: segredo `AUTH_SECRET` obrigatório fora do ambiente local, limite de tentativas de login, revogação de sessão no logout, headers de segurança, checagem de perfil (`Membership.role`), N+1 em saldos contábeis/diário e `CHECK` constraints no banco.
