@@ -17,6 +17,11 @@ As páginas HTML são a interface principal do FinCore. Os formulários fazem va
 - `POST /accounting/accounts`, `POST /accounting/journals` — contas contábeis e rascunhos.
 - `POST /accounting/journals/:entry_id/update`, `/post`, `/reverse` — altera rascunhos, efetiva ou cria estorno.
 - `GET /static/*` — CSS e JavaScript da interface.
+- `GET /contacts`, `/customers`, `/suppliers` — contatos, clientes ou fornecedores; filtros `role` e `status` são aplicados na tela.
+- `GET /contacts/:contact_id/edit` — formulário lateral de edição do contato autenticado.
+- `POST /contacts`, `POST /contacts/:contact_id/update` — cria ou atualiza cliente/fornecedor, com CSRF.
+- `POST /contacts/:contact_id/active` — inativa ou reativa contato; dados e vínculos históricos são preservados.
+- `GET /contacts/postal-code?cep=01001000` — consulta ViaCEP, exige sessão e retorna endereço em JSON; erros upstream são controlados.
 
 Sessões usam cookie assinado, HttpOnly e SameSite=Lax; formulários de alteração de estado validam token CSRF.
 
@@ -38,8 +43,8 @@ As rotas JSON usam o mesmo cookie de sessão assinado das páginas. Listas sempr
 |---|---|---|---|
 | GET | `/api/v1/health` | nenhum | `200 {"status":"ok","version":"v1"}` |
 | GET | `/api/v1/session` | sessão autenticada | `200 {"csrf_token":"..."}` e cookie CSRF assinado |
-| GET | `/api/v1/accounts` | `limit`, `offset` | `{items:[{id,name,type,currency,balance}],limit,offset,total}` |
-| POST | `/api/v1/accounts` | JSON `{name,type,opening_balance?}` | `201` com a conta criada |
+| GET | `/api/v1/accounts` | `limit`, `offset` | `{items:[{id,name,type,bank_name,bank_code,branch_number,account_number,currency,balance}],limit,offset,total}` |
+| POST | `/api/v1/accounts` | JSON `{name,type,opening_balance?,bank_name?,bank_code?,branch_number?,account_number?}` | `201` com a conta criada |
 | GET | `/api/v1/categories` | `limit`, `offset` | `{items:[{id,name,transaction_type,category_kind,parent_id,ledger_account_id}],limit,offset,total}` |
 | POST | `/api/v1/categories` | JSON `{name,transaction_type,category_kind?,parent_id?}` | `201` com a categoria criada; por padrão, analítica e sem superior |
 | GET | `/api/v1/transactions` | `limit`, `offset`, filtro opcional `status=open|settled`, `type=income|expense|transfer_in|transfer_out` | `{items:[...],limit,offset,total}` |

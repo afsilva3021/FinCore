@@ -101,3 +101,17 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Plano contábil permite contas superiores sintéticas e folhas analíticas; partidas rejeitam grupos e saldos sintéticos totalizam as descendentes.
 - [x] Migration aditiva mantém categorias e contas existentes como analíticas.
 - [x] Contratos da API e regras contábeis documentados.
+
+## Cadastros e consistência de interface
+
+- [x] Cadastro de clientes/fornecedores com CPF/CNPJ, endereço, contato, edição, filtro e inativação/reativação.
+- [x] Busca de CEP por ViaCEP no cadastro, com preenchimento editável e erros controlados.
+- [x] Contatos ativos reutilizáveis na criação de contas a pagar/receber; títulos antigos continuam compatíveis.
+- [x] Cadastro de contato isolado por organização; migration `0014` preserva e classifica contatos existentes.
+- [x] Categorias, contas contábeis/lançamentos e importação OFX seguem o padrão de botão e drawer lateral já usado em transações e títulos.
+- [x] JavaScript compartilhado suporta vários drawers, foco, Escape, backdrop e confirmação ao fechar formulários alterados.
+- [x] Validados Ruff, sintaxe JavaScript, testes unitários e integração com PostgreSQL isolado.
+
+## UX — cadastro de subcategorias
+
+- [ ] A tela Categorias oferece ação direta para criar uma subcategoria sob o grupo sintético escolhido, com tipo e classificação analítica pré-selecionados; validação automatizada pendente.

@@ -2,6 +2,7 @@ import asyncio
 import os
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import pytest
@@ -18,6 +19,7 @@ from fincore.application.accounting import (
     reverse_journal_entry,
     update_draft_journal_entry,
 )
+from fincore.application.counterparties import get_counterparty
 from fincore.application.finance import (
     backfill_settled_movement_journals,
     create_account,
@@ -38,6 +40,7 @@ from fincore.application.reconciliation import (
 from fincore.application.titles import create_titles, settle_title, title_balances
 from fincore.config.database import TORTOISE_ORM
 from fincore.infrastructure.models import (
+    Counterparty,
     FinancialAccount,
     FinancialTitle,
     FinancialTransaction,
@@ -157,14 +160,27 @@ async def test_synthetic_categories_group_analytic_subcategories_and_balances() 
     client = RobynTestClient(app)
     categories_page = await asyncio.to_thread(client.get, "/categories", headers=headers)
     accounting_page = await asyncio.to_thread(client.get, "/accounting", headers=headers)
+    reconciliation_page = await asyncio.to_thread(client.get, "/reconciliation", headers=headers)
     transactions_page = await asyncio.to_thread(client.get, "/transactions", headers=headers)
     assert categories_page.status_code == 200
     assert "Receitas operacionais" in categories_page.text
     assert "Vendas de serviços" in categories_page.text
     assert "Sintética" in categories_page.text
+    assert 'aria-controls="category-drawer"' in categories_page.text
+    assert (
+        'id="category-drawer"' in categories_page.text
+        and 'id="category-drawer" data-movement-drawer' in categories_page.text
+    )
     assert accounting_page.status_code == 200
     assert "Conta contábil analítica" in accounting_page.text
     assert "Saldo normal" in accounting_page.text
+    assert 'aria-controls="ledger-account-drawer"' in accounting_page.text
+    assert 'aria-controls="journal-entry-drawer"' in accounting_page.text
+    assert 'id="ledger-account-drawer" data-movement-drawer' in accounting_page.text
+    assert 'id="journal-entry-drawer" data-movement-drawer' in accounting_page.text
+    assert reconciliation_page.status_code == 200
+    assert 'aria-controls="ofx-import-drawer"' in reconciliation_page.text
+    assert 'id="ofx-import-drawer" data-movement-drawer' in reconciliation_page.text
     assert transactions_page.status_code == 200
     assert "Receitas operacionais / Vendas de serviços" in transactions_page.text
 
@@ -457,9 +473,27 @@ async def test_authenticated_json_api_creates_and_settles_financial_movement() -
         return await asyncio.to_thread(call, path, **kwargs)
 
     account = await request(
-        "POST", "/api/v1/accounts", {"name": "Conta API persistente", "type": "bank"}
+        "POST",
+        "/api/v1/accounts",
+        {
+            "name": "Conta API persistente",
+            "type": "bank",
+            "bank_name": "Banco de Teste",
+            "bank_code": "001",
+            "branch_number": "0123-4",
+            "account_number": "000123-5",
+        },
     )
     assert account.status_code == 201
+    assert account.json()["bank_code"] == "001"
+    assert account.json()["branch_number"] == "0123-4"
+    assert account.json()["account_number"] == "000123-5"
+    invalid_bank_account = await request(
+        "POST",
+        "/api/v1/accounts",
+        {"name": "Conta API inválida", "type": "bank", "branch_number": "12345"},
+    )
+    assert invalid_bank_account.status_code == 400
     category = await request(
         "POST",
         "/api/v1/categories",
@@ -485,6 +519,142 @@ async def test_authenticated_json_api_creates_and_settles_financial_movement() -
     settled = await request("POST", f"/api/v1/transactions/{created.json()['id']}/settle")
     assert settled.status_code == 200
     assert settled.json()["settled_by_id"] == str(user.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore:Tortoise connection .*different event loop")
+async def test_contact_crud_roles_isolation_and_reactivation() -> None:
+    suffix = uuid4().hex
+    user = await register_user(
+        "Cadastro de contatos",
+        f"contatos-{suffix}@example.test",
+        "senha-contatos-integracao-123",
+        "Organização de contatos",
+    )
+    membership = await Membership.filter(user=user).first()
+    assert membership is not None
+    organization = await membership.organization
+    token = "csrf-contact-integration"
+    session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
+    headers = {
+        "cookie": f"{COOKIE_AUTH}={session}; {COOKIE_CSRF}={csrf_serializer.dumps(token)}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    client = RobynTestClient(app)
+
+    async def post(path: str, payload: dict[str, str]):
+        return await asyncio.to_thread(
+            client.post, path, body=urlencode({"csrf": token, **payload}), headers=headers
+        )
+
+    contacts_page = await asyncio.to_thread(client.get, "/contacts", headers=headers)
+    assert contacts_page.status_code == 200
+    assert 'aria-controls="contact-drawer"' in contacts_page.text
+    assert "data-movement-drawer" in contacts_page.text
+    assert "data-drawer-initially-open" not in contacts_page.text
+
+    created = await post(
+        "/contacts",
+        {
+            "role": "all",
+            "status": "all",
+            "person_type": "company",
+            "name": "Empresa de teste",
+            "trade_name": "Empresa Teste",
+            "tax_id": "12.345.678/0001-90",
+            "is_customer": "true",
+            "is_supplier": "true",
+            "email": "empresa@example.test",
+            "postal_code": "01001-000",
+            "street": "Praça da Sé",
+            "district": "Sé",
+            "city": "São Paulo",
+            "state": "sp",
+        },
+    )
+    assert created.status_code == 303
+    contact = await Counterparty.get(organization=organization, tax_id="12345678000190")
+    assert contact.is_customer and contact.is_supplier
+    assert contact.party_type == "other"
+    assert contact.state == "SP"
+    assert contact.postal_code == "01001000"
+
+    other_org_user = await register_user(
+        "Outra pessoa",
+        f"outra-org-{suffix}@example.test",
+        "senha-outra-org-123",
+        "Outra organização",
+    )
+    other_membership = await Membership.filter(user=other_org_user).first()
+    assert other_membership is not None
+    other_org = await other_membership.organization
+    assert await get_counterparty(other_org, contact.id) is None
+
+    inactivated = await post(
+        f"/contacts/{contact.id}/active",
+        {"role": "all", "status": "all", "is_active": "false"},
+    )
+    assert inactivated.status_code == 303
+    await contact.refresh_from_db()
+    assert contact.is_active is False
+    inactive_page = await asyncio.to_thread(
+        client.get, "/contacts", headers=headers, query_params={"status": "inactive"}
+    )
+    assert "Empresa Teste" in inactive_page.text
+    assert 'value="true"' in inactive_page.text
+
+    reactivated = await post(
+        f"/contacts/{contact.id}/active",
+        {"role": "all", "status": "all", "is_active": "true"},
+    )
+    assert reactivated.status_code == 303
+    await contact.refresh_from_db()
+    assert contact.is_active is True
+    customer_page = await asyncio.to_thread(client.get, "/customers", headers=headers)
+    supplier_page = await asyncio.to_thread(client.get, "/suppliers", headers=headers)
+    assert "Empresa Teste" in customer_page.text
+    assert "Empresa Teste" in supplier_page.text
+    assert "Reativar" not in customer_page.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore:Tortoise connection .*different event loop")
+async def test_cep_lookup_route_requires_a_session_and_returns_address(monkeypatch) -> None:
+    user = await register_user(
+        "Consulta CEP",
+        f"cep-route-{uuid4().hex}@example.test",
+        "senha-cep-route-123",
+        "Organização CEP",
+    )
+    membership = await Membership.filter(user=user).first()
+    assert membership is not None
+    organization = await membership.organization
+    session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
+    headers = {"cookie": f"{COOKIE_AUTH}={session}"}
+
+    async def fake_lookup(value: str) -> dict[str, str]:
+        assert value == "01001000"
+        return {
+            "postal_code": "01001-000",
+            "street": "Praça da Sé",
+            "district": "Sé",
+            "city": "São Paulo",
+            "state": "SP",
+        }
+
+    monkeypatch.setattr("fincore.presentation.web.lookup_cep", fake_lookup)
+    client = RobynTestClient(app)
+    response = await asyncio.to_thread(
+        client.get, "/contacts/postal-code", headers=headers, query_params={"cep": "01001000"}
+    )
+    assert response.status_code == 200
+    assert response.json()["city"] == "São Paulo"
+    assert response.json()["state"] == "SP"
+
+    anonymous = await asyncio.to_thread(
+        client.get, "/contacts/postal-code", query_params={"cep": "01001000"}
+    )
+    assert anonymous.status_code in {302, 303}
 
 
 @pytest.mark.asyncio
@@ -535,7 +705,8 @@ async def test_payables_and_receivables_pages_filter_titles_by_type_and_status()
     csrf_token = "csrf-title-register-test"
     session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
     headers = {
-        "cookie": f"{COOKIE_AUTH}={session}; {COOKIE_CSRF}={csrf_serializer.dumps(csrf_token)}"
+        "cookie": f"{COOKIE_AUTH}={session}; {COOKIE_CSRF}={csrf_serializer.dumps(csrf_token)}",
+        "Content-Type": "application/x-www-form-urlencoded",
     }
     client = RobynTestClient(app)
     payables = await asyncio.to_thread(
@@ -546,6 +717,36 @@ async def test_payables_and_receivables_pages_filter_titles_by_type_and_status()
     )
     dashboard = await asyncio.to_thread(client.get, "/dashboard", headers=headers)
     accounts_page = await asyncio.to_thread(client.get, "/accounts", headers=headers)
+    account_form = await asyncio.to_thread(
+        client.post,
+        "/accounts",
+        body=urlencode(
+            {
+                "csrf": csrf_token,
+                "name": f"Conta formulário {suffix[:6]}",
+                "account_type": "bank",
+                "bank_name": "Banco de Teste",
+                "bank_code": "001",
+                "branch_number": "0123-4",
+                "account_number": "000123-5",
+                "opening_balance": "0.00",
+            }
+        ),
+        headers=headers,
+    )
+    invalid_account_form = await asyncio.to_thread(
+        client.post,
+        "/accounts",
+        body=urlencode(
+            {
+                "csrf": csrf_token,
+                "name": f"Conta incompleta {suffix[:6]}",
+                "account_type": "bank",
+                "opening_balance": "0.00",
+            }
+        ),
+        headers=headers,
+    )
     title_transactions = await asyncio.to_thread(client.get, "/transactions", headers=headers)
     new_payable = await asyncio.to_thread(client.get, "/payables", headers=headers)
 
@@ -558,6 +759,8 @@ async def test_payables_and_receivables_pages_filter_titles_by_type_and_status()
     assert "Cliente futuro" in receivables.text
     assert "Fornecedor vencido" not in receivables.text
     assert "Visão geral" in dashboard.text
+    assert 'href="/customers"' in dashboard.text
+    assert 'href="/suppliers"' in dashboard.text
     assert "Indicadores realizados" in dashboard.text
     assert "Fornecedor vencido" not in dashboard.text
     assert "Cliente futuro" not in dashboard.text
@@ -567,8 +770,20 @@ async def test_payables_and_receivables_pages_filter_titles_by_type_and_status()
     assert "Microsoft 365" not in dashboard.text
     assert "dados fictícios para demonstração visual" not in dashboard.text
     assert accounts_page.status_code == 200
+    assert account_form.status_code == 303
+    assert invalid_account_form.status_code == 400
+    form_account = await FinancialAccount.get(
+        organization=organization, name=f"Conta formulário {suffix[:6]}"
+    )
+    assert form_account.bank_code == "001"
+    assert form_account.branch_number == "0123-4"
+    assert form_account.account_number == "000123-5"
     assert "Contas cadastradas" in accounts_page.text
     assert 'name="bank_name"' in accounts_page.text
+    assert 'name="bank_code"' in accounts_page.text
+    assert 'name="branch_number"' in accounts_page.text
+    assert 'name="account_number"' in accounts_page.text
+    assert "data-branch-mask" in accounts_page.text
     assert "data-drawer-open" in accounts_page.text
     assert "data-drawer-close>Cancelar</button>" in accounts_page.text
     assert "＋ Novo título" in new_payable.text

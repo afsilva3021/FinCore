@@ -13,6 +13,8 @@
         <a class="nav-link {% if active == 'receivables' %}active{% endif %}" href="/receivables"><span>↗</span> Contas a receber</a>
         <a class="nav-link {% if active == 'accounts' %}active{% endif %}" href="/accounts"><span>▤</span> Bancos e contas</a>
         <a class="nav-link {% if active == 'categories' %}active{% endif %}" href="/categories"><span>◈</span> Categorias</a>
+        <a class="nav-link {% if active == 'customers' %}active{% endif %}" href="/customers"><span>♙</span> Clientes</a>
+        <a class="nav-link {% if active == 'suppliers' %}active{% endif %}" href="/suppliers"><span>▣</span> Fornecedores</a>
       </div>
       <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-management"><span>GESTÃO</span><i aria-hidden="true">⌄</i></button>
       <div class="nav-group" id="nav-management" hidden>
@@ -25,7 +27,7 @@
     <div class="sidebar-bottom"><div class="sidebar-profile"><span class="profile-avatar">{{ name[:1]|upper }}</span><span><strong>{{ name }}</strong><small>Administrador</small></span><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="logout-button" aria-label="Sair" title="Sair">↗</button></form></div></div>
   </aside>
   <main class="main-content">
-    <header class="topbar"><button class="menu-toggle" type="button" data-sidebar-toggle aria-label="Abrir menu">☰</button><div class="breadcrumb-line"><a href="/dashboard">Início</a><span class="crumb-separator">/</span><strong>{{ section }}</strong></div><div class="topbar-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Ativar tema escuro" title="Ativar tema escuro"><span data-theme-icon aria-hidden="true">☾</span></button><span class="demo-pill"><i></i> Dados locais</span><span class="topbar-avatar">{{ name[:1]|upper }}</span></div></header>
+    <header class="topbar"><button class="menu-toggle" type="button" data-sidebar-toggle aria-label="Abrir menu">☰</button><div class="breadcrumb-line"><a href="/dashboard">Início</a><span class="crumb-separator">/</span><strong>{{ section }}</strong></div><div class="topbar-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Ativar tema escuro" title="Ativar tema escuro"><span data-theme-icon aria-hidden="true">☾</span></button><span class="demo-pill" title="{{ name }}"><i></i> {{ name }}</span><span class="topbar-avatar">{{ name[:1]|upper }}</span></div></header>
     <div class="page-container">
       {% block module_content %}{% endblock %}
       <footer class="page-footer"><span>FinCore <span class="footer-dot">·</span> Gestão financeira</span><span>Dados privados da organização.</span></footer>

@@ -2,27 +2,93 @@
 {% block title %}Contas · FinCore{% endblock %}
 {% block module_content %}
 <div class="page-heading transactions-page-heading">
-  <div><span class="eyebrow">GESTÃO FINANCEIRA</span><h1>Bancos e contas</h1><p>Contas financeiras e saldos realizados da sua organização.</p></div>
-  <div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="account-drawer" aria-expanded="false">+ Nova conta bancária</button></div>
+  <div><span class="eyebrow">GESTÃO FINANCEIRA</span>
+    <h1>Bancos e contas</h1>
+    <p>Contas financeiras e saldos realizados da sua organização.</p>
+  </div>
+  <div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open
+      aria-haspopup="dialog" aria-controls="account-drawer" aria-expanded="false">+ Nova conta bancária</button></div>
 </div>
 <article class="panel-card transactions-table-card">
-  <div class="panel-heading"><div><h3>Contas cadastradas</h3><p>Saldos consideram o saldo inicial e movimentações liquidadas.</p></div><span class="step-count">{{ accounts|length }} conta(s)</span></div>
-  {% if accounts %}<div class="table-responsive mt-3"><table class="table align-middle"><thead><tr><th>Instituição</th><th>Conta</th><th>Tipo</th><th class="text-end">Saldo</th></tr></thead><tbody>{% for account, balance in accounts %}<tr><td><strong>{{ account.bank_name or '—' }}</strong></td><td>{{ account.name }}<small class="d-block text-secondary">{{ account.currency }}</small></td><td>{{ {'bank':'Conta bancária','cash':'Caixa','wallet':'Carteira'}.get(account.account_type, account.account_type) }}</td><td class="text-end fw-semibold">R$ {{ '%.2f'|format(balance)|replace('.', ',') }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="finance-empty"><span>▤</span><strong>Nenhuma conta cadastrada</strong><small>Cadastre um banco e uma conta financeira para começar.</small></div>{% endif %}
+  <div class="panel-heading">
+    <div>
+      <h3>Contas cadastradas</h3>
+      <p>Saldos consideram o saldo inicial e movimentações liquidadas.</p>
+    </div><span class="step-count">{{ accounts|length }} conta(s)</span>
+  </div>
+  {% if accounts %}<div class="table-responsive mt-3">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Instituição</th>
+          <th>Conta</th>
+          <th>Agência</th>
+          <th>Número da conta</th>
+          <th>Tipo</th>
+          <th>Situação</th>
+          <th class="text-end">Saldo</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>{% for account, balance in accounts %}<tr>
+          <td><strong>{{ account.bank_name or '—' }}</strong>{% if account.bank_code %}<small
+              class="d-block text-secondary">Banco {{ account.bank_code }}</small>{% endif %}</td>
+          <td>{{ account.name }}<small class="d-block text-secondary">{{ account.currency }}</small></td>
+          <td>{{ account.branch_number or '—' }}</td>
+          <td>{{ account.account_number or '—' }}</td>
+          <td>{{ {'bank':'Conta bancária','cash':'Caixa','wallet':'Carteira'}.get(account.account_type,
+            account.account_type) }}</td>
+          <td><span class="badge {{ 'text-bg-success' if account.is_active else 'text-bg-secondary' }}">{{ 'Ativa' if account.is_active else 'Inativa' }}</span></td>
+          <td class="text-end fw-semibold">R$ {{ '%.2f'|format(balance)|replace('.', ',') }}</td>
+          <td><div class="d-flex gap-2"><a class="btn btn-sm btn-outline-primary" href="/accounts/{{ account.id }}/edit">Editar</a><form method="post" action="/accounts/{{ account.id }}/active"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="is_active" value="{{ 'false' if account.is_active else 'true' }}"><button class="btn btn-sm {{ 'btn-secondary' if account.is_active else 'btn-success' }}" type="submit">{{ 'Desativar' if account.is_active else 'Ativar' }}</button></form></div></td>
+        </tr>{% endfor %}</tbody>
+    </table>
+  </div>{% else %}<div class="finance-empty"><span>▤</span><strong>Nenhuma conta cadastrada</strong><small>Cadastre um
+      banco e uma conta financeira para começar.</small></div>{% endif %}
 </article>
 
 <div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
-<aside class="movement-drawer" id="account-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="account-drawer-title" {% if error %}data-drawer-initially-open{% else %}hidden{% endif %}>
-  <div class="movement-drawer-header"><div><span class="eyebrow">BANCOS E CONTAS</span><h2 id="account-drawer-title">Cadastrar conta bancária</h2><p>Informe a instituição e os dados básicos da conta.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
-  <form method="post" action="/accounts" class="movement-drawer-form" data-movement-form>
+<aside class="movement-drawer" id="account-drawer" data-movement-drawer role="dialog" aria-modal="true"
+  aria-labelledby="account-drawer-title" {% if error or editing_account %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header">
+    <div><span class="eyebrow">BANCOS E CONTAS</span>
+      <h2 id="account-drawer-title">{{ 'Editar conta' if editing_account else 'Cadastrar conta bancária' }}</h2>
+      <p>Informe a instituição e os dados básicos da conta.</p>
+    </div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button>
+  </div>
+  <form method="post" action="{{ '/accounts/' ~ editing_account.id ~ '/update' if editing_account else '/accounts' }}" class="movement-drawer-form" data-movement-form>
     <input type="hidden" name="csrf" value="{{ csrf }}">
     {% if error %}<div class="alert alert-danger mx-4 mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
     <div class="drawer-form-fields">
-      <div><label class="form-label" for="bank-name">Banco ou instituição</label><input class="form-control" id="bank-name" name="bank_name" maxlength="120" placeholder="Ex.: Banco do Brasil"></div>
-      <div><label class="form-label" for="account-name">Nome da conta</label><input class="form-control" id="account-name" name="name" maxlength="120" placeholder="Ex.: Conta principal" required></div>
-      <div><label class="form-label" for="account-type">Tipo</label><select class="form-select" id="account-type" name="account_type"><option value="bank">Conta bancária</option><option value="cash">Caixa</option><option value="wallet">Carteira</option></select></div>
-      <div><label class="form-label" for="opening-balance">Saldo inicial (R$)</label><input class="form-control" id="opening-balance" name="opening_balance" type="number" min="0" step="0.01" value="0.00"></div>
+      <div><label class="form-label" for="bank-name">Banco ou instituição</label><input class="form-control"
+          id="bank-name" name="bank_name" maxlength="120" placeholder="Ex.: Banco do Brasil" value="{{ form.get('bank_name', (editing_account.bank_name or '') if editing_account else '') }}"></div>
+      <div><label class="form-label" for="account-name">Nome da conta</label><input class="form-control"
+          id="account-name" name="name" maxlength="120" placeholder="Ex.: Conta principal" value="{{ form.get('name', editing_account.name if editing_account else '') }}" required></div>
+      <div data-bank-account-fields><label class="form-label" for="bank-code">Código do banco</label><input
+          class="form-control" id="bank-code" name="bank_code" maxlength="4" inputmode="numeric" pattern="[0-9]{1,4}"
+          placeholder="Ex.: 001" value="{{ form.get('bank_code', (editing_account.bank_code or '') if editing_account else '') }}" required></div>
+      <div data-bank-account-fields><label class="form-label" for="branch-number">Agência (com dígito)</label><input
+          class="form-control" id="branch-number" name="branch_number" maxlength="6" inputmode="numeric"
+          pattern="[0-9]{1,4}-[0-9]" placeholder="0000-0" value="{{ form.get('branch_number', (editing_account.branch_number or '') if editing_account else '') }}" data-branch-mask required></div>
+      <div data-bank-account-fields><label class="form-label" for="account-number">Número da conta</label><input
+          class="form-control" id="account-number" name="account_number" maxlength="30" placeholder="Ex.: 12345-6"
+          value="{{ form.get('account_number', (editing_account.account_number or '') if editing_account else '') }}" required></div>
+      <div><label class="form-label" for="account-type">Tipo</label><select class="form-select" id="account-type"
+          name="account_type" data-account-type>
+          <option value="bank" {{ 'selected' if form.get('account_type', editing_account.account_type if editing_account else 'bank') == 'bank' else '' }}>Conta bancária</option>
+          <option value="cash" {{ 'selected' if form.get('account_type', editing_account.account_type if editing_account else 'bank') == 'cash' else '' }}>Caixa</option>
+          <option value="wallet" {{ 'selected' if form.get('account_type', editing_account.account_type if editing_account else 'bank') == 'wallet' else '' }}>Carteira</option>
+        </select></div>
+      {% if not editing_account %}<div><label class="form-label" for="opening-balance">Saldo inicial (R$)</label><input class="form-control"
+          id="opening-balance" name="opening_balance" type="number" min="0" step="0.01" value="0.00"></div>{% endif %}
     </div>
-    {% if error %}<div class="movement-drawer-footer"><span>Corrija os dados e tente salvar novamente.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Salvar conta</button></div></div>{% else %}<div class="movement-drawer-footer"><span>O cadastro é local e não conecta ao banco externo.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Salvar conta</button></div></div>{% endif %}
+    {% if error %}<div class="movement-drawer-footer"><span>Corrija os dados e tente salvar novamente.</span>
+      <div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button"
+          data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">{{ 'Salvar alterações' if editing_account else 'Salvar conta' }}</button></div>
+    </div>{% else %}<div class="movement-drawer-footer"><span>O cadastro é local e não conecta ao banco externo.</span>
+      <div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button"
+          data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">{{ 'Salvar alterações' if editing_account else 'Salvar conta' }}</button></div>
+    </div>{% endif %}
   </form>
 </aside>
 {% endblock %}

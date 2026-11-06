@@ -10,7 +10,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0013`; migrations são aditivas e preservam registros.
+- Migrations versionadas até `0014`; migrations são aditivas e preservam registros.
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
@@ -37,10 +37,12 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - Cadastro de usuário e organização, login e logout.
 - Hash Argon2id, sessão assinada, cookies HttpOnly/SameSite e CSRF.
 - Isolamento de contas, categorias, movimentações, títulos, conciliações e relatórios por organização.
+- Cadastro próprio de clientes e fornecedores em `/customers` e `/suppliers`, com CPF/CNPJ, endereço, contato, inativação e reativação.
+- Consulta de endereço por CEP via ViaCEP, acionada pelo formulário de contato; os campos também podem ser preenchidos manualmente.
 
 ### Contas, categorias e transações
 
-- Cadastro de contas financeiras bancárias, caixa e carteira, com saldos derivados dos movimentos realizados.
+- Cadastro de contas financeiras bancárias, caixa e carteira, com banco, código bancário, agência com dígito e número da conta; saldos derivados dos movimentos realizados.
 - Categorias de receita e despesa hierárquicas: grupos sintéticos e categorias analíticas; movimentos usam apenas categorias analíticas.
 - Receitas, despesas, transferências, movimentos em aberto, liquidação, extrato interno, idempotência e estornos compensatórios.
 - Uma transferência cria movimentos pareados de origem/destino, sem gerar receita ou despesa.
@@ -51,6 +53,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 ### Contas a pagar e a receber (títulos)
 
 - Títulos independentes, contatos vinculados, busca, filtros por situação e vencimento e estado vazio.
+- Os contatos cadastrados podem ser reutilizados na criação de títulos; contatos novos ainda podem ser informados diretamente no formulário.
 - Cadastro por drawer responsivo com descrição, contato, documento (número, tipo e série), categoria, centro de custo/projeto, valor, datas de emissão/vencimento, forma e condição, conta, parcelas, observações e referência de anexo.
 - Campos específicos a pagar: beneficiário, código de barras/linha digitável, dados bancários ou chave Pix e referência opcional de aprovador.
 - Campos específicos a receber: pedido/contrato/venda, meio e data de envio da cobrança, previsão de recebimento e link/identificador.

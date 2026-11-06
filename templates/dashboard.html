@@ -14,6 +14,8 @@
         <a class="nav-link" href="/receivables"><span>↗</span> Contas a receber</a>
         <a class="nav-link" href="/accounts"><span>▤</span> Bancos e contas</a>
         <a class="nav-link" href="/categories"><span>◈</span> Categorias</a>
+        <a class="nav-link" href="/customers"><span>♙</span> Clientes</a>
+        <a class="nav-link" href="/suppliers"><span>▣</span> Fornecedores</a>
       </div>
       <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-management"><span>GESTÃO</span><i aria-hidden="true">⌄</i></button>
       <div class="nav-group" id="nav-management" hidden>
@@ -26,7 +28,7 @@
     <div class="sidebar-bottom"><div class="sidebar-profile"><span class="profile-avatar">{{ name[:1]|upper }}</span><span><strong>{{ name }}</strong><small>Administrador</small></span><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="logout-button" aria-label="Sair" title="Sair">↗</button></form></div></div>
   </aside>
   <main class="main-content">
-    <header class="topbar"><button class="menu-toggle" type="button" data-sidebar-toggle aria-label="Abrir menu">☰</button><div class="breadcrumb-line"><span>Início</span><span class="crumb-separator">/</span><strong>Visão geral</strong></div><div class="topbar-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Ativar tema escuro" title="Ativar tema escuro"><span data-theme-icon aria-hidden="true">☾</span></button><span class="demo-pill database-status"><i></i> Dados do banco</span><span class="topbar-avatar">{{ name[:1]|upper }}</span></div></header>
+    <header class="topbar"><button class="menu-toggle" type="button" data-sidebar-toggle aria-label="Abrir menu">☰</button><div class="breadcrumb-line"><span>Início</span><span class="crumb-separator">/</span><strong>Visão geral</strong></div><div class="topbar-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Ativar tema escuro" title="Ativar tema escuro"><span data-theme-icon aria-hidden="true">☾</span></button><span class="demo-pill database-status" title="{{ name }}"><i></i> {{ name }}</span><span class="topbar-avatar">{{ name[:1]|upper }}</span></div></header>
     <div class="page-container">
       <div class="page-heading"><div><span class="eyebrow">RESUMO FINANCEIRO</span><h1>Visão geral</h1><p>Posição financeira atual de {{ organization.name }}.</p></div><a class="btn btn-primary" href="/transactions">+ Nova movimentação</a></div>
       <div class="dashboard-context"><span class="context-mark">{{ organization.name[:1]|upper }}</span><div><strong>{{ organization.name }}</strong><small>Indicadores calculados a partir das contas e transações cadastradas.</small></div><a href="/accounts">Ver contas <span>→</span></a></div>

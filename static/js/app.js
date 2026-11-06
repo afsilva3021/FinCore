@@ -5,6 +5,12 @@ document.addEventListener('click', (event) => {
     const visible = input.type === 'password';
     input.type = visible ? 'text' : 'password';
     toggle.setAttribute('aria-label', visible ? 'Ocultar senha' : 'Mostrar senha');
+    toggle.setAttribute('aria-pressed', String(visible));
+    const icon = toggle.querySelector('.fa-solid');
+    if (icon) {
+      icon.classList.toggle('fa-eye', visible);
+      icon.classList.toggle('fa-eye-slash', !visible);
+    }
   }
 
   if (event.target.closest('[data-sidebar-toggle]')) {
@@ -13,19 +19,24 @@ document.addEventListener('click', (event) => {
 });
 
 const navAccordionButtons = [...document.querySelectorAll('[data-nav-accordion]')];
-const setOpenNavAccordion = (activeButton, shouldOpen) => {
+const setOpenNavAccordion = (activeButton, shouldOpen, revealEnd = false) => {
   navAccordionButtons.forEach((button) => {
     const panel = document.getElementById(button.getAttribute('aria-controls'));
     const isOpen = shouldOpen && button === activeButton;
     button.setAttribute('aria-expanded', String(isOpen));
     if (panel) panel.hidden = !isOpen;
+    if (isOpen && revealEnd && panel) {
+      requestAnimationFrame(() => {
+        panel.lastElementChild?.scrollIntoView({ block: 'nearest' });
+      });
+    }
   });
 };
 
 navAccordionButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const shouldOpen = button.getAttribute('aria-expanded') !== 'true';
-    setOpenNavAccordion(button, shouldOpen);
+    setOpenNavAccordion(button, shouldOpen, shouldOpen);
   });
 });
 
@@ -194,98 +205,179 @@ if (movementType) {
   syncMovementFields();
 }
 
-const movementDrawer = document.querySelector('[data-movement-drawer]');
-if (movementDrawer) {
-  const backdrop = document.querySelector('[data-drawer-backdrop]');
-  const openButton = document.querySelector('[data-drawer-open]');
-  const movementForm = movementDrawer.querySelector('[data-movement-form]');
-  let returnFocusTo = null;
-  let hasUnsavedChanges = false;
-  let isClosing = false;
+const movementDrawers = [...document.querySelectorAll('[data-movement-drawer]')];
+const drawerBackdrop = document.querySelector('[data-drawer-backdrop]');
+const drawerStates = new Map();
+const drawerOpenButton = (drawer) => document.querySelector(`[data-drawer-open][aria-controls="${drawer.id}"]`)
+  || document.querySelector('[data-drawer-open]');
+const closeDrawerImmediately = (drawer) => {
+  drawer.classList.remove('is-open');
+  drawer.setAttribute('aria-hidden', 'true');
+  drawer.hidden = true;
+  drawerOpenButton(drawer)?.setAttribute('aria-expanded', 'false');
+  drawerStates.set(drawer, { ...drawerStates.get(drawer), changed: false, closing: false });
+};
 
-  const openDrawer = (trigger = openButton) => {
-    if (isClosing) return;
-    returnFocusTo = trigger || openButton;
-    movementDrawer.hidden = false;
-    if (backdrop) backdrop.hidden = false;
-    movementDrawer.setAttribute('aria-hidden', 'false');
-    if (openButton) openButton.setAttribute('aria-expanded', 'true');
-    document.body.classList.add('drawer-open');
-    requestAnimationFrame(() => {
-      movementDrawer.classList.add('is-open');
-      backdrop?.classList.add('is-open');
+const openMovementDrawer = (drawer, trigger = null) => {
+  if (!drawer) return;
+  movementDrawers.filter((item) => item !== drawer && !item.hidden).forEach(closeDrawerImmediately);
+  const openButton = drawerOpenButton(drawer);
+  const state = drawerStates.get(drawer) || {};
+  state.returnFocusTo = trigger || openButton;
+  state.changed = false;
+  state.closing = false;
+  drawerStates.set(drawer, state);
+  drawer.hidden = false;
+  drawer.setAttribute('aria-hidden', 'false');
+  openButton?.setAttribute('aria-expanded', 'true');
+  drawerBackdrop && (drawerBackdrop.hidden = false);
+  document.body.classList.add('drawer-open');
+  requestAnimationFrame(() => {
+    drawer.classList.add('is-open');
+    drawerBackdrop?.classList.add('is-open');
+  });
+  window.setTimeout(() => {
+    drawer.querySelector('input:not([type="hidden"]), select, textarea, button')?.focus();
+  }, 40);
+};
+
+const closeMovementDrawer = async (drawer, force = false) => {
+  const state = drawerStates.get(drawer) || {};
+  if (drawer.hidden || state.closing) return;
+  if (state.changed && !force) {
+    const discard = await showConfirmation({
+      title: 'Alterações não salvas',
+      message: 'Você tem alterações não salvas. Deseja mesmo sair?',
+      confirmText: 'Descartar alterações',
+      variant: 'danger',
     });
-    window.setTimeout(() => {
-      const firstField = movementDrawer.querySelector('input:not([type="hidden"]), select, textarea, button');
-      firstField?.focus();
-    }, 40);
-  };
-
-  const closeDrawer = async (force = false) => {
-    if (movementDrawer.hidden || isClosing) return;
-    if (hasUnsavedChanges && !force) {
-      const discardChanges = await showConfirmation({
-        title: 'Alterações não salvas',
-        message: 'Você tem alterações não salvas. Deseja mesmo sair?',
-        confirmText: 'Descartar alterações',
-        variant: 'danger',
-      });
-      if (!discardChanges) return;
-    }
-
-    if (hasUnsavedChanges) {
-      movementForm?.reset();
-      movementType?.dispatchEvent(new Event('change'));
-    }
-    hasUnsavedChanges = false;
-    movementDrawer.classList.remove('is-open');
-    backdrop?.classList.remove('is-open');
-    movementDrawer.setAttribute('aria-hidden', 'true');
-    if (openButton) openButton.setAttribute('aria-expanded', 'false');
+    if (!discard) return;
+  }
+  if (state.changed) {
+    drawer.querySelector('[data-movement-form]')?.reset();
+    movementType?.dispatchEvent(new Event('change'));
+  }
+  state.changed = false;
+  state.closing = true;
+  drawerStates.set(drawer, state);
+  drawer.classList.remove('is-open');
+  drawer.setAttribute('aria-hidden', 'true');
+  drawerOpenButton(drawer)?.setAttribute('aria-expanded', 'false');
+  const anotherOpen = movementDrawers.some((item) => item !== drawer && !item.hidden);
+  if (!anotherOpen) {
+    drawerBackdrop?.classList.remove('is-open');
     document.body.classList.remove('drawer-open');
-    isClosing = true;
-    window.setTimeout(() => {
-      movementDrawer.hidden = true;
-      if (backdrop) backdrop.hidden = true;
-      isClosing = false;
-      returnFocusTo?.focus();
-    }, 240);
-  };
+  }
+  window.setTimeout(() => {
+    drawer.hidden = true;
+    if (!movementDrawers.some((item) => !item.hidden)) drawerBackdrop && (drawerBackdrop.hidden = true);
+    state.closing = false;
+    state.returnFocusTo?.focus();
+  }, 240);
+};
 
-  openButton?.addEventListener('click', () => openDrawer(openButton));
-  movementDrawer.querySelectorAll('[data-drawer-close]').forEach((button) => {
-    button.addEventListener('click', () => closeDrawer());
+movementDrawers.forEach((drawer) => {
+  drawerStates.set(drawer, { changed: false, closing: false, returnFocusTo: null });
+  drawer.querySelector('[data-movement-form]')?.addEventListener('input', () => {
+    drawerStates.get(drawer).changed = true;
   });
-  backdrop?.addEventListener('click', () => closeDrawer());
-  movementForm?.addEventListener('input', () => { hasUnsavedChanges = true; });
-  movementForm?.addEventListener('change', () => { hasUnsavedChanges = true; });
+  drawer.querySelector('[data-movement-form]')?.addEventListener('change', () => {
+    drawerStates.get(drawer).changed = true;
+  });
+  drawer.querySelectorAll('[data-drawer-close]').forEach((button) => {
+    button.addEventListener('click', () => closeMovementDrawer(drawer));
+  });
+  if (drawer.hasAttribute('data-drawer-initially-open')) openMovementDrawer(drawer);
+});
 
-  document.addEventListener('keydown', (event) => {
-    if (movementDrawer.hidden) return;
-    if (confirmationModalElement?.classList.contains('show')) return;
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      closeDrawer();
-      return;
-    }
-    if (event.key !== 'Tab') return;
+document.querySelectorAll('[data-drawer-open]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const target = button.getAttribute('aria-controls');
+    const drawer = movementDrawers.find((item) => item.id === target) || movementDrawers[0];
+    openMovementDrawer(drawer, button);
+  });
+});
 
-    const focusable = [...movementDrawer.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
-      .filter((element) => element.offsetParent !== null);
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
+document.querySelectorAll('[data-category-subcategory]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const drawer = document.querySelector('#category-drawer');
+    const typeSelect = drawer?.querySelector('[data-category-type]');
+    const kindSelect = drawer?.querySelector('[data-category-kind]');
+    const parentSelect = drawer?.querySelector('[data-category-parent]');
+    if (!drawer || !typeSelect || !kindSelect || !parentSelect) return;
+    typeSelect.value = button.dataset.categorySubcategoryType;
+    kindSelect.value = 'analytic';
+    typeSelect.dispatchEvent(new Event('change'));
+    kindSelect.dispatchEvent(new Event('change'));
+    parentSelect.value = button.dataset.categorySubcategory;
+    openMovementDrawer(drawer, button);
+  });
+});
+
+drawerBackdrop?.addEventListener('click', () => {
+  const currentDrawer = movementDrawers.find((item) => !item.hidden);
+  if (currentDrawer) closeMovementDrawer(currentDrawer);
+});
+
+document.addEventListener('keydown', (event) => {
+  const drawer = movementDrawers.find((item) => !item.hidden);
+  if (!drawer || confirmationModalElement?.classList.contains('show')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeMovementDrawer(drawer);
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const focusable = [...drawer.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+    .filter((element) => element.offsetParent !== null);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+document.querySelectorAll('[data-postal-code]').forEach((input) => {
+  const form = input.closest('form');
+  const status = form?.querySelector('[data-postal-code-status]');
+  input.addEventListener('blur', async () => {
+    const cep = input.value.replace(/\D/g, '');
+    if (cep.length !== 8) return;
+    if (status) status.textContent = 'Consultando CEP…';
+    input.setAttribute('aria-busy', 'true');
+    try {
+      const response = await fetch(`/contacts/postal-code?cep=${encodeURIComponent(cep)}`, {
+        headers: { Accept: 'application/json' },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Não foi possível consultar o CEP.');
+      input.value = result.postal_code || input.value;
+      for (const field of ['street', 'district', 'city', 'state']) {
+        const target = form.querySelector(`[data-postal-target="${field}"]`);
+        if (target && result[field]) target.value = result[field];
+      }
+      if (status) status.textContent = 'Endereço preenchido pelo CEP. Você pode revisar os dados.';
+    } catch (error) {
+      if (status) status.textContent = error.message || 'Consulta indisponível; preencha o endereço manualmente.';
+    } finally {
+      input.removeAttribute('aria-busy');
     }
   });
+});
 
-  if (movementDrawer.hasAttribute('data-drawer-initially-open')) openDrawer(null);
-}
+document.querySelectorAll('[name="tax_id"]').forEach((input) => {
+  input.addEventListener('input', () => {
+    const digits = input.value.replace(/\D/g, '').slice(0, 14);
+    input.value = digits.length <= 11
+      ? digits.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+      : digits.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+  });
+});
 
 document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -353,3 +445,25 @@ if (adapterSelect) {
   adapterSelect.addEventListener('change', syncAdapterFields);
   syncAdapterFields();
 }
+
+const accountTypeSelect = document.querySelector('[data-account-type]');
+if (accountTypeSelect) {
+  const bankFields = [...document.querySelectorAll('[data-bank-account-fields]')];
+  const syncBankFields = () => {
+    const isBankAccount = accountTypeSelect.value === 'bank';
+    bankFields.forEach((group) => {
+      group.hidden = !isBankAccount;
+      const input = group.querySelector('input');
+      if (input) input.required = isBankAccount;
+    });
+  };
+  accountTypeSelect.addEventListener('change', syncBankFields);
+  syncBankFields();
+}
+
+document.querySelectorAll('[data-branch-mask]').forEach((input) => {
+  input.addEventListener('input', () => {
+    const digits = input.value.replace(/\D/g, '').slice(0, 5);
+    input.value = digits.length > 4 ? `${digits.slice(0, 4)}-${digits.slice(4)}` : digits;
+  });
+});

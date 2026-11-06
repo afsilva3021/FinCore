@@ -135,11 +135,30 @@ async def create_titles(
     created: list[FinancialTitle] = []
     try:
         async with in_transaction():
-            counterparty, _ = await Counterparty.get_or_create(
+            counterparty = await Counterparty.filter(
                 organization=organization,
                 name=name,
                 party_type=party_type,
-            )
+            ).first()
+            if counterparty is None and party_type in {"customer", "supplier"}:
+                role_field = "is_customer" if party_type == "customer" else "is_supplier"
+                counterparty = await Counterparty.filter(
+                    organization=organization,
+                    name=name,
+                    party_type="other",
+                    is_active=True,
+                    **{role_field: True},
+                ).first()
+            if counterparty is not None and not counterparty.is_active:
+                raise ValueError("O contato selecionado está inativo.")
+            if counterparty is None:
+                counterparty = await Counterparty.create(
+                    organization=organization,
+                    name=name,
+                    party_type=party_type,
+                    is_customer=party_type == "customer",
+                    is_supplier=party_type == "supplier",
+                )
             allocated = Decimal("0.00")
             for installment_no in range(1, count + 1):
                 installment_amount = (

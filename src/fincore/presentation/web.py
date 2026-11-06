@@ -8,7 +8,7 @@ from decimal import Decimal
 from http.cookies import SimpleCookie
 from io import BytesIO, StringIO
 from pathlib import Path
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 from uuid import UUID, uuid4
 from xml.sax.saxutils import escape
 
@@ -30,6 +30,12 @@ from fincore.application.accounting import (
     reverse_journal_entry,
     update_draft_journal_entry,
 )
+from fincore.application.counterparties import (
+    get_counterparty,
+    list_counterparties,
+    save_counterparty,
+    set_counterparty_active,
+)
 from fincore.application.finance import (
     create_account,
     create_category,
@@ -39,7 +45,9 @@ from fincore.application.finance import (
     parse_money,
     parse_opening_balance,
     reverse_movement,
+    set_account_active,
     settle_movement,
+    update_account,
 )
 from fincore.application.identity import authenticate, register_user
 from fincore.application.reconciliation import (
@@ -57,6 +65,7 @@ from fincore.application.titles import (
     title_balances,
 )
 from fincore.config.settings import settings
+from fincore.infrastructure.cep_lookup import CepLookupError, lookup_cep
 from fincore.infrastructure.models import (
     Category,
     FinancialAccount,
@@ -82,6 +91,20 @@ template_env = Environment(
     loader=FileSystemLoader(Path(__file__).parents[3] / "templates"),
     autoescape=select_autoescape(["html", "xml"]),
 )
+
+
+def _format_tax_id(value: str | None) -> str:
+    if not value:
+        return "—"
+    digits = "".join(character for character in value if character.isdigit())
+    if len(digits) == 11:
+        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    return value
+
+
+template_env.filters["format_tax_id"] = _format_tax_id
 
 
 def _response(body: str, status: int = 200) -> Response:
@@ -338,16 +361,20 @@ async def _render_accounts(
     user: User,
     organization: Organization,
     error: str | None = None,
+    editing_account: FinancialAccount | None = None,
+    form: dict[str, str] | None = None,
 ) -> str:
     return _page(
         "finance/accounts.html",
         name=user.full_name,
         organization=organization,
         csrf=_csrf_from_auth(request),
-        accounts=await get_account_balances(organization),
+        accounts=await get_account_balances(organization, include_inactive=True),
         active="accounts",
         section="Bancos e contas",
         error=error,
+        editing_account=editing_account,
+        form=form or {},
     )
 
 
@@ -356,6 +383,7 @@ async def _render_categories(
     user: User,
     organization: Organization,
     error: str | None = None,
+    form: dict[str, str] | None = None,
 ) -> str:
     return _page(
         "finance/categories.html",
@@ -374,6 +402,53 @@ async def _render_categories(
         active="categories",
         section="Categorias",
         error=error,
+        form=form or {},
+    )
+
+
+async def _render_counterparties(
+    request: Request,
+    user: User,
+    organization: Organization,
+    *,
+    role: str = "all",
+    status: str = "all",
+    form: dict[str, str] | None = None,
+    error: str | None = None,
+    message: str | None = None,
+    editing: bool = False,
+) -> str:
+    if role not in {"all", "customer", "supplier"}:
+        role = "all"
+    if status not in {"all", "active", "inactive"}:
+        status = "all"
+    if form is None:
+        form = {
+            "person_type": "individual",
+            "is_customer": "true" if role == "customer" else "",
+            "is_supplier": "true" if role == "supplier" else "",
+        }
+    return _page(
+        "finance/contacts.html",
+        name=user.full_name,
+        organization=organization,
+        csrf=_csrf_from_auth(request),
+        contacts=await list_counterparties(organization, role=role, status=status),
+        role=role,
+        status=status,
+        form=form,
+        editing=editing,
+        open_drawer=editing or error is not None,
+        error=error,
+        message=message,
+        page_title={"customer": "Clientes", "supplier": "Fornecedores"}.get(
+            role, "Clientes e fornecedores"
+        ),
+        form_title={"customer": "cliente", "supplier": "fornecedor"}.get(role, "contato"),
+        active="contacts" if role == "all" else role + "s",
+        section={"customer": "Clientes", "supplier": "Fornecedores"}.get(
+            role, "Clientes e fornecedores"
+        ),
     )
 
 
@@ -496,6 +571,11 @@ async def _render_title_register(
         title_type=title_type,
         accounts=accounts,
         categories=categories,
+        counterparties=await list_counterparties(
+            organization,
+            role="supplier" if is_payable else "customer",
+            status="active",
+        ),
         payment_methods=[
             ("bank_transfer", "Transferência"),
             ("pix", "Pix"),
@@ -549,13 +629,22 @@ def register_finance_routes(app: object) -> None:
             return _redirect("/accounts")
         try:
             opening_balance = parse_opening_balance(form.get("opening_balance", ""))
+            account_type = form.get("account_type", "")
+            bank_code = form.get("bank_code", "").strip()
+            branch_number = form.get("branch_number", "").strip()
+            account_number = form.get("account_number", "").strip()
+            if account_type == "bank" and not all((bank_code, branch_number, account_number)):
+                raise ValueError("Informe código do banco, agência com dígito e número da conta.")
             await create_account(
                 organization,
                 current[0],
                 form.get("name", "").strip(),
-                form.get("account_type", ""),
+                account_type,
                 opening_balance,
                 form.get("bank_name", ""),
+                bank_code,
+                branch_number,
+                account_number,
             )
         except ValueError as exc:
             return _response(
@@ -568,6 +657,93 @@ def register_finance_routes(app: object) -> None:
                 ),
                 409,
             )
+        return _redirect("/accounts")
+
+    @app.get("/accounts/:account_id/edit")
+    async def edit_account_page(request: Request) -> Response:
+        current = await _current_user(request)
+        if current is None:
+            return _redirect("/login")
+        try:
+            account_id = UUID(request.path_params["account_id"])
+        except ValueError, KeyError:
+            return _redirect("/accounts")
+        organization = await current[1].organization
+        account = await FinancialAccount.get_or_none(id=account_id, organization=organization)
+        if account is None:
+            return _redirect("/accounts")
+        return _response(
+            await _render_accounts(request, current[0], organization, editing_account=account)
+        )
+
+    @app.post("/accounts/:account_id/update")
+    async def update_account_page(request: Request) -> Response:
+        current = await _current_user(request)
+        if current is None:
+            return _redirect("/login")
+        try:
+            account_id = UUID(request.path_params["account_id"])
+        except ValueError, KeyError:
+            return _redirect("/accounts")
+        form = _form_data(request)
+        if not _valid_csrf(request, form.get("csrf", "")):
+            return _redirect("/accounts")
+        organization = await current[1].organization
+        account = await FinancialAccount.get_or_none(id=account_id, organization=organization)
+        if account is None:
+            return _redirect("/accounts")
+        try:
+            await update_account(
+                organization,
+                account_id,
+                form.get("name", "").strip(),
+                form.get("account_type", ""),
+                form.get("bank_name", ""),
+                form.get("bank_code", ""),
+                form.get("branch_number", ""),
+                form.get("account_number", ""),
+            )
+        except ValueError as exc:
+            return _response(
+                await _render_accounts(request, current[0], organization, str(exc), account, form),
+                400,
+            )
+        except IntegrityError:
+            return _response(
+                await _render_accounts(
+                    request,
+                    current[0],
+                    organization,
+                    "Já existe uma conta com esse nome.",
+                    account,
+                    form,
+                ),
+                409,
+            )
+        return _redirect("/accounts")
+
+    @app.post("/accounts/:account_id/active")
+    async def set_account_active_page(request: Request) -> Response:
+        current = await _current_user(request)
+        if current is None:
+            return _redirect("/login")
+        try:
+            account_id = UUID(request.path_params["account_id"])
+        except ValueError, KeyError:
+            return _redirect("/accounts")
+        form = _form_data(request)
+        if not _valid_csrf(request, form.get("csrf", "")):
+            return _redirect("/accounts")
+        if form.get("is_active") not in {"true", "false"}:
+            return _redirect("/accounts")
+        try:
+            await set_account_active(
+                await current[1].organization,
+                account_id,
+                form["is_active"] == "true",
+            )
+        except ValueError:
+            pass
         return _redirect("/accounts")
 
     @app.get("/categories")
@@ -604,13 +780,18 @@ def register_finance_routes(app: object) -> None:
                     current[0],
                     organization,
                     str(exc) or "Selecione uma categoria superior válida.",
+                    form,
                 ),
                 400,
             )
         except IntegrityError:
             return _response(
                 await _render_categories(
-                    request, current[0], organization, "Essa categoria já existe para esse tipo."
+                    request,
+                    current[0],
+                    organization,
+                    "Essa categoria já existe para esse tipo.",
+                    form,
                 ),
                 409,
             )
@@ -919,6 +1100,7 @@ async def _render_accounting(
     user: User,
     organization: Organization,
     error: str | None = None,
+    open_drawer: str | None = None,
 ) -> str:
     entries = (
         await JournalEntry.filter(organization=organization)
@@ -954,6 +1136,7 @@ async def _render_accounting(
         entries=entry_rows,
         reversed_ids=reversals,
         error=error,
+        open_drawer=open_drawer,
     )
 
 
@@ -993,13 +1176,18 @@ def register_accounting_routes(app: object) -> None:
                     current[0],
                     organization,
                     str(exc) or "Selecione uma conta superior válida.",
+                    open_drawer="account",
                 ),
                 400,
             )
         except IntegrityError:
             return _response(
                 await _render_accounting(
-                    request, current[0], organization, "Este código contábil já está em uso."
+                    request,
+                    current[0],
+                    organization,
+                    "Este código contábil já está em uso.",
+                    open_drawer="account",
                 ),
                 409,
             )
@@ -1027,12 +1215,19 @@ def register_accounting_routes(app: object) -> None:
                 await post_journal_entry(organization, entry.id)
         except (ValueError, KeyError) as exc:
             return _response(
-                await _render_accounting(request, current[0], organization, str(exc)), 400
+                await _render_accounting(
+                    request, current[0], organization, str(exc), open_drawer="entry"
+                ),
+                400,
             )
         except IntegrityError:
             return _response(
                 await _render_accounting(
-                    request, current[0], organization, "Não foi possível salvar o lançamento."
+                    request,
+                    current[0],
+                    organization,
+                    "Não foi possível salvar o lançamento.",
+                    open_drawer="entry",
                 ),
                 409,
             )
@@ -1107,6 +1302,7 @@ def register_reconciliation_routes(app: object) -> None:
         organization: Organization,
         message: str | None = None,
         error: str | None = None,
+        form: dict[str, str] | None = None,
     ) -> str:
         imported = (
             await ImportedStatementTransaction.filter(organization=organization)
@@ -1139,6 +1335,7 @@ def register_reconciliation_routes(app: object) -> None:
             rows=rows,
             message=message,
             error=error,
+            form=form or {},
         )
 
     @app.get("/reconciliation")
@@ -1165,7 +1362,10 @@ def register_reconciliation_routes(app: object) -> None:
             )
         except (ValueError, KeyError) as exc:
             return _response(
-                await render_reconciliation(request, current[0], organization, error=str(exc)), 400
+                await render_reconciliation(
+                    request, current[0], organization, error=str(exc), form=form
+                ),
+                400,
             )
         return _response(
             await render_reconciliation(
@@ -1525,6 +1725,10 @@ def register_api_routes(app: object) -> None:
                 "id": str(account.id),
                 "name": account.name,
                 "type": account.account_type,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "branch_number": account.branch_number,
+                "account_number": account.account_number,
                 "currency": account.currency,
                 "balance": str(balance),
             }
@@ -1550,12 +1754,19 @@ def register_api_routes(app: object) -> None:
                 raise ValueError("Informe nome e tipo da conta.")
             if not isinstance(opening_balance, str):
                 raise ValueError("opening_balance deve ser uma string decimal.")
+            account_details = {}
+            for field_name in ("bank_name", "bank_code", "branch_number", "account_number"):
+                value = payload.get(field_name)
+                if value is not None and not isinstance(value, str):
+                    raise ValueError(f"{field_name} deve ser texto.")
+                account_details[field_name] = value
             account = await create_account(
                 await current[1].organization,
                 current[0],
                 name.strip(),
                 account_type,
                 parse_opening_balance(opening_balance),
+                **account_details,
             )
         except ValueError as exc:
             return error_response("invalid_account", str(exc), 400)
@@ -1566,6 +1777,10 @@ def register_api_routes(app: object) -> None:
                 "id": str(account.id),
                 "name": account.name,
                 "type": account.account_type,
+                "bank_name": account.bank_name,
+                "bank_code": account.bank_code,
+                "branch_number": account.branch_number,
+                "account_number": account.account_number,
                 "currency": account.currency,
                 "opening_balance": str(account.opening_balance),
             },
@@ -1940,6 +2155,216 @@ def register_api_routes(app: object) -> None:
         except IntegrityError:
             return error_response("reversal_conflict", "Esta movimentação já foi estornada.", 409)
         return json_response(movement_json(movement), 201)
+
+
+def register_counterparty_routes(app: object) -> None:
+    async def render(
+        request: Request,
+        user: User,
+        organization: Organization,
+        *,
+        role: str = "all",
+        status: str = "all",
+        form: dict[str, str] | None = None,
+        error: str | None = None,
+        message: str | None = None,
+        editing: bool = False,
+    ) -> Response:
+        return _response(
+            await _render_counterparties(
+                request,
+                user,
+                organization,
+                role=role,
+                status=status,
+                form=form,
+                error=error,
+                message=message,
+                editing=editing,
+            ),
+            400 if error else 200,
+        )
+
+    async def index(request: Request, role_override: str | None = None) -> Response:
+        current = await _current_user(request)
+        if current is None:
+            return _redirect("/login")
+        role = role_override or request.query_params.get("role", "all")
+        status = request.query_params.get("status", "all")
+        message = request.query_params.get("message", "")
+        return await render(
+            request,
+            current[0],
+            await current[1].organization,
+            role=role,
+            status=status,
+            message=message,
+        )
+
+    @app.get("/contacts")
+    async def contacts_page(request: Request) -> Response:
+        return await index(request)
+
+    @app.get("/customers")
+    async def customers_page(request: Request) -> Response:
+        return await index(request, "customer")
+
+    @app.get("/suppliers")
+    async def suppliers_page(request: Request) -> Response:
+        return await index(request, "supplier")
+
+    @app.get("/contacts/postal-code")
+    async def postal_code_lookup(request: Request) -> Response:
+        if await _current_user(request) is None:
+            return _redirect("/login")
+        try:
+            result = await lookup_cep(request.query_params.get("cep", ""))
+            return Response(
+                status_code=200,
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                body=json.dumps(result, ensure_ascii=False),
+            )
+        except CepLookupError as exc:
+            return Response(
+                status_code=exc.status_code,
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                body=json.dumps({"message": str(exc)}, ensure_ascii=False),
+            )
+
+    @app.get("/contacts/:contact_id/edit")
+    async def edit_contact_page(request: Request) -> Response:
+        current = await _current_user(request)
+        if current is None:
+            return _redirect("/login")
+        try:
+            contact = await get_counterparty(
+                await current[1].organization, UUID(request.path_params["contact_id"])
+            )
+        except ValueError, KeyError:
+            contact = None
+        if contact is None:
+            return _response("Contato não encontrado.", 404)
+        form = {
+            "id": str(contact.id),
+            "person_type": contact.person_type,
+            "name": contact.name,
+            "trade_name": contact.trade_name or "",
+            "tax_id": contact.tax_id or "",
+            "is_customer": "true" if contact.is_customer else "",
+            "is_supplier": "true" if contact.is_supplier else "",
+            "email": contact.email or "",
+            "phone": contact.phone or "",
+            "postal_code": contact.postal_code or "",
+            "street": contact.street or "",
+            "address_number": contact.address_number or "",
+            "complement": contact.complement or "",
+            "district": contact.district or "",
+            "city": contact.city or "",
+            "state": contact.state or "",
+            "notes": contact.notes or "",
+        }
+        return await render(
+            request,
+            current[0],
+            await current[1].organization,
+            role=request.query_params.get("role", "all"),
+            status=request.query_params.get("status", "all"),
+            form=form,
+            editing=True,
+        )
+
+    async def save_page(request: Request, contact_id: UUID | None = None) -> Response:
+        current = await _current_user(request)
+        if current is None:
+            return _redirect("/login")
+        form = _form_data(request)
+        organization = await current[1].organization
+        role = form.get("role", "all")
+        status = form.get("status", "all")
+        if not _valid_csrf(request, form.get("csrf", "")):
+            return _redirect("/contacts")
+        try:
+            await save_counterparty(
+                organization=organization,
+                counterparty_id=contact_id,
+                person_type=form.get("person_type", ""),
+                name=form.get("name", ""),
+                trade_name=form.get("trade_name", ""),
+                tax_id=form.get("tax_id", ""),
+                is_customer=form.get("is_customer", "").lower() in {"true", "on", "1"},
+                is_supplier=form.get("is_supplier", "").lower() in {"true", "on", "1"},
+                email=form.get("email", ""),
+                phone=form.get("phone", ""),
+                postal_code=form.get("postal_code", ""),
+                street=form.get("street", ""),
+                address_number=form.get("address_number", ""),
+                complement=form.get("complement", ""),
+                district=form.get("district", ""),
+                city=form.get("city", ""),
+                state=form.get("state", ""),
+                notes=form.get("notes", ""),
+            )
+        except ValueError as exc:
+            form["id"] = str(contact_id) if contact_id else ""
+            return await render(
+                request,
+                current[0],
+                organization,
+                role=role,
+                status=status,
+                form=form,
+                error=str(exc),
+                editing=contact_id is not None,
+            )
+        role = role if role in {"all", "customer", "supplier"} else "all"
+        status = status if status in {"all", "active", "inactive"} else "all"
+        message = "Contato atualizado." if contact_id else "Contato cadastrado."
+        query = urlencode({"role": role, "status": status, "message": message})
+        return _redirect(f"/contacts?{query}")
+
+    @app.post("/contacts")
+    async def create_contact_page(request: Request) -> Response:
+        return await save_page(request)
+
+    @app.post("/contacts/:contact_id/update")
+    async def update_contact_page(request: Request) -> Response:
+        try:
+            contact_id = UUID(request.path_params["contact_id"])
+        except ValueError, KeyError:
+            return _response("Contato não encontrado.", 404)
+        return await save_page(request, contact_id)
+
+    @app.post("/contacts/:contact_id/active")
+    async def set_contact_active_page(request: Request) -> Response:
+        current = await _current_user(request)
+        if current is None:
+            return _redirect("/login")
+        form = _form_data(request)
+        if not _valid_csrf(request, form.get("csrf", "")):
+            return _redirect("/contacts")
+        try:
+            contact_id = UUID(request.path_params["contact_id"])
+            is_active = form.get("is_active", "").lower() in {"true", "1", "on"}
+            await set_counterparty_active(await current[1].organization, contact_id, is_active)
+        except (ValueError, KeyError) as exc:
+            role = form.get("role", "all")
+            status = form.get("status", "all")
+            return await render(
+                request,
+                current[0],
+                await current[1].organization,
+                role=role,
+                status=status,
+                error=str(exc),
+            )
+        message = "Contato reativado." if is_active else "Contato inativado."
+        role = form.get("role", "all")
+        status = form.get("status", "all")
+        role = role if role in {"all", "customer", "supplier"} else "all"
+        status = status if status in {"all", "active", "inactive"} else "all"
+        return _redirect(
+            f"/contacts?{urlencode({'role': role, 'status': status, 'message': message})}"
+        )
 
 
 def _journal_lines_from_form(form: dict[str, str]) -> list[tuple[UUID, Decimal, Decimal]]:

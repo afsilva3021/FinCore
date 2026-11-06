@@ -1,0 +1,53 @@
+{% extends "finance/layout.html" %}
+{% block title %}{{ page_title }} · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">GESTÃO · RELACIONAMENTOS</span><h1>{{ page_title }}</h1><p>Cadastre pessoas e empresas uma vez e use os contatos nos títulos.</p></div>
+  <div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="contact-drawer" aria-expanded="false">＋ Novo {{ form_title }}</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Contatos cadastrados</h3><p>Um contato pode ser cliente e fornecedor ao mesmo tempo.</p></div><span class="step-count">{{ contacts|length }} contato(s)</span></div>
+  <form method="get" action="/contacts" class="title-filters mb-3">
+    <div><label class="form-label" for="contact-role">Perfil</label><select class="form-select" id="contact-role" name="role"><option value="all" {% if role == 'all' %}selected{% endif %}>Todos</option><option value="customer" {% if role == 'customer' %}selected{% endif %}>Clientes</option><option value="supplier" {% if role == 'supplier' %}selected{% endif %}>Fornecedores</option></select></div>
+    <div><label class="form-label" for="contact-status">Situação</label><select class="form-select" id="contact-status" name="status"><option value="all" {% if status == 'all' %}selected{% endif %}>Todas</option><option value="active" {% if status == 'active' %}selected{% endif %}>Ativos</option><option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inativos</option></select></div>
+    <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/contacts">Limpar</a></div>
+  </form>
+  {% if contacts %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Contato</th><th>Documento / contato</th><th>Perfil</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for contact in contacts %}
+    <tr><td><strong>{{ contact.trade_name or contact.name }}</strong>{% if contact.trade_name %}<small class="d-block text-secondary">{{ contact.name }}</small>{% endif %}<small class="d-block text-secondary">{{ 'Pessoa jurídica' if contact.person_type == 'company' else 'Pessoa física' }}</small></td>
+      <td>{{ contact.tax_id|format_tax_id }}<small class="d-block text-secondary">{{ contact.email or contact.phone or 'Sem contato informado' }}</small></td>
+      <td>{{ 'Cliente · Fornecedor' if contact.is_customer and contact.is_supplier else 'Cliente' if contact.is_customer else 'Fornecedor' }}</td>
+      <td><span class="badge {{ 'text-bg-success' if contact.is_active else 'text-bg-secondary' }}">{{ 'Ativo' if contact.is_active else 'Inativo' }}</span></td>
+      <td><div class="d-flex gap-2"><a class="btn btn-sm btn-outline-primary" href="/contacts/{{ contact.id }}/edit?role={{ role }}&status={{ status }}">Editar</a><form method="post" action="/contacts/{{ contact.id }}/active"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="is_active" value="{{ 'false' if contact.is_active else 'true' }}"><button class="btn btn-sm {{ 'btn-outline-secondary' if contact.is_active else 'btn-outline-success' }}" type="submit">{{ 'Inativar' if contact.is_active else 'Reativar' }}</button></form></div></td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="finance-empty"><span>♙</span><strong>Nenhum contato encontrado</strong><small>Cadastre um cliente ou fornecedor para selecionar nos títulos.</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="contact-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="contact-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">{{ page_title|upper }}</span><h2 id="contact-drawer-title">{{ 'Editar contato' if editing else 'Novo ' ~ form_title }}</h2><p>Preencha os dados principais do relacionamento.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="{{ '/contacts/' ~ form.get('id') ~ '/update' if editing else '/contacts' }}" class="movement-drawer-form" data-movement-form>
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="status" value="{{ status }}">
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="contact-person-type">Tipo de pessoa</label><select class="form-select" id="contact-person-type" name="person_type"><option value="individual" {% if form.get('person_type','individual') == 'individual' %}selected{% endif %}>Pessoa física</option><option value="company" {% if form.get('person_type') == 'company' %}selected{% endif %}>Pessoa jurídica</option></select></div>
+      <div><label class="form-label" for="contact-name">{{ 'Razão social' if form.get('person_type') == 'company' else 'Nome completo' }}</label><input class="form-control" id="contact-name" name="name" maxlength="150" value="{{ form.get('name','') }}" required></div>
+      <div><label class="form-label" for="contact-trade-name">Nome fantasia</label><input class="form-control" id="contact-trade-name" name="trade_name" maxlength="150" value="{{ form.get('trade_name','') }}"></div>
+      <div><label class="form-label" for="contact-tax-id">CPF/CNPJ</label><input class="form-control" id="contact-tax-id" name="tax_id" maxlength="20" inputmode="numeric" value="{{ form.get('tax_id','') }}" placeholder="000.000.000-00 ou 00.000.000/0000-00"></div>
+      <fieldset><legend class="form-label fs-6">Perfil do contato</legend><div class="d-flex gap-4"><div class="form-check"><input class="form-check-input" type="checkbox" id="contact-is-customer" name="is_customer" value="true" {% if form.get('is_customer') == 'true' %}checked{% endif %}><label class="form-check-label" for="contact-is-customer">Cliente</label></div><div class="form-check"><input class="form-check-input" type="checkbox" id="contact-is-supplier" name="is_supplier" value="true" {% if form.get('is_supplier') == 'true' %}checked{% endif %}><label class="form-check-label" for="contact-is-supplier">Fornecedor</label></div></div><small class="form-text">Selecione um ou os dois perfis.</small></fieldset>
+      <div class="drawer-date-grid"><div><label class="form-label" for="contact-email">E-mail</label><input class="form-control" id="contact-email" name="email" type="email" maxlength="254" value="{{ form.get('email','') }}"></div><div><label class="form-label" for="contact-phone">Telefone</label><input class="form-control" id="contact-phone" name="phone" maxlength="40" value="{{ form.get('phone','') }}"></div></div>
+      <div><strong class="form-label d-block">Endereço principal <small class="text-secondary fw-normal">(opcional)</small></strong></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="contact-postal-code">CEP</label><input class="form-control" id="contact-postal-code" name="postal_code" inputmode="numeric" maxlength="9" value="{{ form.get('postal_code','') }}" data-postal-code aria-describedby="postal-code-status"><small class="form-text" id="postal-code-status" data-postal-code-status aria-live="polite">O endereço será consultado ao sair deste campo.</small></div><div><label class="form-label" for="contact-state">UF</label><input class="form-control" id="contact-state" name="state" maxlength="2" value="{{ form.get('state','') }}" data-postal-target="state"></div></div>
+      <div><label class="form-label" for="contact-street">Logradouro</label><input class="form-control" id="contact-street" name="street" maxlength="160" value="{{ form.get('street','') }}" data-postal-target="street"></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="contact-address-number">Número</label><input class="form-control" id="contact-address-number" name="address_number" maxlength="20" value="{{ form.get('address_number','') }}"></div><div><label class="form-label" for="contact-complement">Complemento</label><input class="form-control" id="contact-complement" name="complement" maxlength="100" value="{{ form.get('complement','') }}"></div></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="contact-district">Bairro</label><input class="form-control" id="contact-district" name="district" maxlength="100" value="{{ form.get('district','') }}" data-postal-target="district"></div><div><label class="form-label" for="contact-city">Cidade</label><input class="form-control" id="contact-city" name="city" maxlength="100" value="{{ form.get('city','') }}" data-postal-target="city"></div></div>
+      <div><label class="form-label" for="contact-notes">Observações</label><textarea class="form-control" id="contact-notes" name="notes" rows="3">{{ form.get('notes','') }}</textarea></div>
+    </div>
+    <div class="movement-drawer-footer"><span>O contato pode ser selecionado nos títulos a pagar e receber.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">{{ 'Salvar alterações' if editing else 'Adicionar contato' }}</button></div></div>
+  </form>
+</aside>
+{% endblock %}

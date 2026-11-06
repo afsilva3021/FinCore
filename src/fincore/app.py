@@ -13,6 +13,7 @@ from fincore.presentation.health import database_is_ready
 from fincore.presentation.web import (
     register_accounting_routes,
     register_api_routes,
+    register_counterparty_routes,
     register_demo_integration_routes,
     register_finance_routes,
     register_reconciliation_routes,
@@ -57,6 +58,7 @@ async def health() -> Response:
 
 
 register_web_routes(app)
+register_counterparty_routes(app)
 register_finance_routes(app)
 register_accounting_routes(app)
 register_reconciliation_routes(app)
