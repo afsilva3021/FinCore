@@ -48,7 +48,7 @@ from fincore.application.reconciliation import (
     match_statement_transaction,
     unmatch_statement_transaction,
 )
-from fincore.application.reports import transaction_report
+from fincore.application.reports import realized_totals, transaction_report
 from fincore.application.simulated_integrations import simulate_adapter
 from fincore.application.titles import (
     cancel_title,
@@ -294,23 +294,10 @@ def register_web_routes(app: object) -> None:
         user, membership = current
         organization = await membership.organization
         balances = await get_account_balances(organization)
-        movements = await FinancialTransaction.filter(organization=organization).all()
-        income = sum(
-            (
-                movement.amount
-                for movement in movements
-                if movement.transaction_type == "income" and movement.status == "settled"
-            ),
-            Decimal("0.00"),
-        )
-        expenses = sum(
-            (
-                movement.amount
-                for movement in movements
-                if movement.transaction_type == "expense" and movement.status == "settled"
-            ),
-            Decimal("0.00"),
-        )
+        income, expenses = await realized_totals(organization)
+        open_count = await FinancialTransaction.filter(
+            organization=organization, status="open"
+        ).count()
         return _response(
             _page(
                 "dashboard.html",
@@ -320,7 +307,7 @@ def register_web_routes(app: object) -> None:
                 total_balance=sum((balance for _, balance in balances), Decimal("0.00")),
                 income=income,
                 expenses=expenses,
-                open_count=sum(movement.status == "open" for movement in movements),
+                open_count=open_count,
                 recent=await FinancialTransaction.filter(organization=organization)
                 .select_related("account")
                 .order_by("-created_at")
