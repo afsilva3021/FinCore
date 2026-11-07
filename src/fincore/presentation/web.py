@@ -3,6 +3,7 @@
 import csv
 import json
 import secrets
+from contextvars import ContextVar
 from datetime import date
 from decimal import Decimal
 from http.cookies import SimpleCookie
@@ -55,6 +56,17 @@ from fincore.application.identity import (
     register_user,
     revoke_sessions,
 )
+from fincore.application.members import (
+    ROLE_DESCRIPTIONS,
+    ROLE_LABELS,
+    add_member,
+    can_manage_members,
+    can_write,
+    change_member_role,
+    list_members,
+    role_label,
+    set_member_active,
+)
 from fincore.application.money import parse_api_amount
 from fincore.application.reconciliation import (
     import_ofx,
@@ -100,6 +112,43 @@ template_env = Environment(
     loader=FileSystemLoader(Path(__file__).parents[3] / "templates"),
     autoescape=select_autoescape(["html", "xml"]),
 )
+# Perfil do membro da requisição atual, definido em _current_user e lido pelo layout para
+# mostrar o perfil, o menu de membros e o aviso de somente leitura.
+_current_role: ContextVar[str] = ContextVar("fincore_current_role", default="")
+template_env.globals["current_role"] = lambda: _current_role.get()
+template_env.globals["role_label"] = role_label
+template_env.globals["can_write"] = lambda: can_write(_current_role.get())
+template_env.globals["can_manage_members"] = lambda: can_manage_members(_current_role.get())
+
+# Escritas que não exigem perfil com permissão de alteração.
+WRITE_EXEMPT_PATHS = frozenset({"/login", "/register", "/logout"})
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+async def enforce_write_permission(request: Request) -> Request | Response:
+    """Middleware global: perfis sem permissão de escrita não alteram nada.
+
+    Fica antes de todas as rotas, então uma rota nova já nasce protegida (negar por
+    padrão). Requisições sem sessão seguem para a rota, que responde 401/redirect.
+    """
+    path = request.url.path
+    if request.method.upper() not in WRITE_METHODS or path in WRITE_EXEMPT_PATHS:
+        return request
+    current = await _current_user(request)
+    if current is None or can_write(current[1].role):
+        return request
+    message = "Seu perfil é somente leitura; peça a um proprietário para alterar o acesso."
+    if path.startswith("/api/"):
+        return Response(
+            status_code=403,
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            description=json.dumps({"error": {"code": "forbidden", "message": message}}),
+        )
+    return Response(
+        status_code=403,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+        description=_page("forbidden.html", message=message),
+    )
 
 
 def _format_tax_id(value: str | None) -> str:
@@ -196,6 +245,7 @@ async def _current_user(request: Request) -> tuple[User, Membership] | None:
     ).first()
     if membership is None:
         return None
+    _current_role.set(membership.role)
     return user, membership
 
 
@@ -2438,3 +2488,120 @@ def _journal_lines_from_form(form: dict[str, str]) -> list[tuple[UUID, Decimal, 
                 raise ValueError("Selecione uma conta em cada linha preenchida.")
             line_inputs.append((UUID(account_text), debit, credit))
     return line_inputs
+
+
+async def _render_members(
+    request: Request,
+    user: User,
+    membership: Membership,
+    organization: Organization,
+    *,
+    error: str | None = None,
+    message: str | None = None,
+    form: dict[str, str] | None = None,
+) -> str:
+    return _page(
+        "finance/members.html",
+        name=user.full_name,
+        organization=organization,
+        csrf=_csrf_from_auth(request),
+        members=await list_members(organization),
+        me=membership,
+        roles=ROLE_LABELS,
+        role_descriptions=ROLE_DESCRIPTIONS,
+        password_rules=PASSWORD_RULES_TEXT,
+        active="members",
+        section="Membros",
+        error=error,
+        message=message,
+        form=form or {},
+    )
+
+
+def register_member_routes(app: object) -> None:
+    async def _owner(request: Request) -> tuple[User, Membership] | Response:
+        current = await _current_user(request)
+        if current is None:
+            return _redirect("/login")
+        if not can_manage_members(current[1].role):
+            return _response(
+                _page("forbidden.html", message="Só proprietários gerenciam membros."), 403
+            )
+        return current
+
+    @app.get("/members")
+    async def members_page(request: Request) -> Response:
+        current = await _owner(request)
+        if isinstance(current, Response):
+            return current
+        user, membership = current
+        organization = await membership.organization
+        return _response(
+            await _render_members(
+                request,
+                user,
+                membership,
+                organization,
+                message=request.query_params.get("message", None),
+            )
+        )
+
+    @app.post("/members")
+    async def create_member_page(request: Request) -> Response:
+        current = await _owner(request)
+        if isinstance(current, Response):
+            return current
+        user, membership = current
+        form = _form_data(request)
+        if not _valid_csrf(request, form.get("csrf", "")):
+            return _redirect("/members")
+        organization = await membership.organization
+        try:
+            await add_member(
+                organization,
+                form.get("full_name", ""),
+                form.get("email", ""),
+                form.get("password", ""),
+                form.get("role", ""),
+            )
+        except ValueError as exc:
+            filled = {key: form.get(key, "") for key in ("full_name", "email", "role")}
+            return _response(
+                await _render_members(
+                    request, user, membership, organization, error=str(exc), form=filled
+                ),
+                400,
+            )
+        return _redirect(f"/members?{urlencode({'message': 'Membro adicionado.'})}")
+
+    @app.post("/members/:membership_id")
+    async def update_member_page(request: Request) -> Response:
+        current = await _owner(request)
+        if isinstance(current, Response):
+            return current
+        user, membership = current
+        form = _form_data(request)
+        if not _valid_csrf(request, form.get("csrf", "")):
+            return _redirect("/members")
+        organization = await membership.organization
+        try:
+            target = _form_uuid(
+                {"id": request.path_params.get("membership_id", "")},
+                "id",
+                "Membro não encontrado nesta organização.",
+            )
+            action = form.get("action", "")
+            if action == "role":
+                await change_member_role(organization, target, form.get("role", ""))
+                message = "Perfil atualizado."
+            elif action in {"deactivate", "activate"}:
+                await set_member_active(organization, target, action == "activate")
+                message = "Acesso desativado." if action == "deactivate" else "Acesso reativado."
+            else:
+                raise ValueError("Ação inválida.")
+        except ValueError as exc:
+            return _response(
+                await _render_members(request, user, membership, organization, error=str(exc)),
+                400,
+            )
+        return _redirect(f"/members?{urlencode({'message': message})}")

@@ -22,6 +22,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-06 | Perfis de acesso (Proprietário, Financeiro, Somente leitura) com página `/members`; bloqueio central de escrita para quem é somente leitura. CI passa a construir a imagem Docker, subir o Compose e rodar os testes com o usuário restrito do banco. |
 | 2026-11-06 | Segurança de login: bloqueio de 15 min após 5 falhas por e-mail ou 20 por IP, tempo de resposta igual para e-mail inexistente, logout que revoga a sessão em todos os dispositivos e headers de segurança (CSP sem `unsafe-inline`, `X-Frame-Options`, `nosniff`, HSTS com HTTPS). Migration `0016`. |
 | 2026-11-06 | Aplicação em container próprio, separado do banco: Dockerfile sem root, banco só em rede interna, usuário de banco restrito (sem DDL) para o app, migrations automáticas e bloqueio de `AUTH_SECRET` padrão fora do ambiente local. |
 | 2026-11-06 | Ícones de mostrar/ocultar senha também no cadastro; senhas dos testes de integração ajustadas à política de senha. |
@@ -57,6 +58,15 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 - Headers de segurança em todas as respostas da aplicação: CSP sem scripts inline, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` e, com `SECURE_COOKIES=true`, HSTS. Arquivos de `/static` são servidos direto pelo Robyn sem esses headers; em produção, o proxy reverso deve aplicá-los a tudo.
 - Cadastro exige confirmação de senha e senha de 12 a 128 caracteres com pelo menos 3 tipos (minúscula, maiúscula, número, símbolo), sem conter o nome ou o início do e-mail. A regra fica no servidor (`application/identity.py`); a página apenas a espelha para retorno imediato.
 - Isolamento de contas, categorias, movimentações, títulos, conciliações e relatórios por organização.
+- Perfis de acesso por organização, gerenciados em `/members` pelo proprietário:
+
+  | Perfil | Pode |
+  |---|---|
+  | Proprietário | Tudo, inclusive adicionar membros, mudar perfis e desativar acessos |
+  | Financeiro | Cadastrar e alterar dados financeiros e contábeis; não gerencia membros |
+  | Somente leitura | Consultar telas e relatórios; nenhuma alteração |
+
+  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
 - Cadastro próprio de clientes e fornecedores em `/customers` e `/suppliers`, com CPF/CNPJ, endereço, contato, inativação e reativação.
 - Consulta de endereço por CEP via ViaCEP, acionada pelo formulário de contato; os campos também podem ser preenchidos manualmente.
 

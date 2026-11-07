@@ -89,6 +89,9 @@ A interface principal é renderizada no servidor e requer sessão de usuário; f
 | GET | `/reports?start=AAAA-MM-DD&end=AAAA-MM-DD` | Relatório do período por competência | Página HTML |
 | GET | `/reports.csv?start=AAAA-MM-DD&end=AAAA-MM-DD` | Exporta movimentações do período | CSV UTF-8 com BOM |
 | GET | `/reports.pdf?start=AAAA-MM-DD&end=AAAA-MM-DD` | Exporta resumo e movimentações do período | PDF |
+| GET | `/members` | Lista membros e perfis (só proprietário) | Página HTML; `403` para outros perfis |
+| POST | `/members` | Adiciona membro: `full_name`, `email`, `password` (inicial; ignorada se o e-mail já tem conta), `role` (`owner`, `finance`, `viewer`) | Redireciona com mensagem; `400` com motivo |
+| POST | `/members/:membership_id` | `action=role` + `role`, `action=deactivate` ou `action=activate` | Redireciona; `400` ao tentar remover o último proprietário |
 | GET | `/integrations` | Página dos contratos demonstrativos | Página HTML |
 | POST | `/integrations/simulate` | Executa simulador Pix, boleto, cartão, webhook ou Open Finance | Resultado fictício em HTML |
 
@@ -111,3 +114,7 @@ Títulos são separados de `/transactions`. As rotas abaixo usam sessão autenti
 | POST | `/titles/{id}/cancel` | Cancela título em aberto que não tenha baixas |
 
 O cadastro recebe contraparte, descrição, valor total, emissão/vencimento inicial, conta, categoria opcional, documento, condição/parcelas, forma de pagamento, centro de custo/projeto e referências opcionais específicas do tipo. Cada baixa requer chave de operação, valor aplicado, data, conta e forma; desconto, juros, multa, tarifas, comprovante e observações são opcionais. O saldo é derivado das baixas. Referências de anexo, cobrança e comprovante não carregam nem armazenam arquivos. Não existe API JSON de títulos nesta versão.
+
+## Autorização por perfil
+
+Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que exige perfil `owner` ou `finance` (exceto `/login`, `/register` e `/logout`). Perfil `viewer` recebe `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.

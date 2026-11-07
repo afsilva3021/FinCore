@@ -1,0 +1,30 @@
+{% extends "finance/layout.html" %}
+{% block title %}Membros · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading"><div><span class="eyebrow">GESTÃO</span><h1>Membros e perfis</h1><p>Defina quem acessa a organização e o que cada pessoa pode fazer.</p></div><div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="member-drawer" aria-expanded="false">＋ Novo membro</button></div></div>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+<article class="panel-card transactions-table-card"><div class="panel-heading"><div><h3>Perfis de acesso</h3><p>{% for key, label in roles.items() %}<strong>{{ label }}:</strong> {{ role_descriptions[key] }}{% if not loop.last %} · {% endif %}{% endfor %}</p></div><span class="step-count">{{ members|length }} membro(s)</span></div>
+  <div class="table-responsive mt-3"><table class="table align-middle"><thead><tr><th>Pessoa</th><th>Perfil</th><th>Situação</th><th class="text-end">Ações</th></tr></thead><tbody>
+  {% for member in members %}<tr>
+    <td><strong>{{ member.user.full_name }}</strong>{% if member.id == me.id %} <span class="badge text-bg-light">você</span>{% endif %}<small class="d-block text-secondary">{{ member.user.email }}</small></td>
+    <td><form method="post" action="/members/{{ member.id }}" class="d-flex gap-2 align-items-center"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="role"><label class="visually-hidden" for="role-{{ member.id }}">Perfil de {{ member.user.full_name }}</label><select class="form-select form-select-sm" id="role-{{ member.id }}" name="role">{% for key, label in roles.items() %}<option value="{{ key }}" {% if member.role == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary" type="submit">Salvar</button></form></td>
+    <td>{% if member.is_active %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Desativado</span>{% endif %}</td>
+    <td class="text-end"><form method="post" action="/members/{{ member.id }}" {% if member.is_active %}data-confirm="Desativar o acesso de {{ member.user.full_name }}? O histórico é preservado."{% endif %}><input type="hidden" name="csrf" value="{{ csrf }}">{% if member.is_active %}<input type="hidden" name="action" value="deactivate"><button class="btn btn-sm btn-outline-danger" type="submit">Desativar</button>{% else %}<input type="hidden" name="action" value="activate"><button class="btn btn-sm btn-outline-secondary" type="submit">Reativar</button>{% endif %}</form></td>
+  </tr>{% endfor %}
+  </tbody></table></div>
+</article>
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="member-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="member-drawer-title" {% if error and form %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">MEMBROS</span><h2 id="member-drawer-title">Adicionar membro</h2><p>Se o e-mail já tiver conta, a pessoa só ganha acesso a esta organização e mantém a própria senha.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/members" class="movement-drawer-form" data-movement-form><input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="member-name">Nome</label><input class="form-control" id="member-name" name="full_name" maxlength="160" value="{{ form.get('full_name','') }}" required></div>
+      <div><label class="form-label" for="member-email">E-mail</label><input class="form-control" type="email" id="member-email" name="email" maxlength="254" value="{{ form.get('email','') }}" required></div>
+      <div><label class="form-label" for="member-password">Senha inicial</label><input class="form-control" type="password" id="member-password" name="password" autocomplete="new-password" maxlength="128"><div class="form-text">{{ password_rules }} Entregue a senha à pessoa por um canal seguro.</div></div>
+      <div><label class="form-label" for="member-role">Perfil</label><select class="form-select" id="member-role" name="role">{% for key, label in roles.items() %}<option value="{{ key }}" {% if form.get('role', 'viewer') == key %}selected{% endif %}>{{ label }} — {{ role_descriptions[key] }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="movement-drawer-footer"><span>O perfil pode ser alterado depois.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Adicionar</button></div></div>
+  </form>
+</aside>
+{% endblock %}

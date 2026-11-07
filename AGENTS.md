@@ -170,7 +170,7 @@ https://github.com/firefly-iii/firefly-iii
 - Interface responsiva em pt-BR, com acessibilidade básica, estados de carregamento e mensagens de erro claras.
 - Não expor funcionalidades como prontas na interface quando forem apenas simuladas; sinalizar claramente o ambiente de demonstração.
 - A interface atual é renderizada no servidor com Robyn/Jinja/Bootstrap. Formulários seguem sessão e CSRF; mensagens de confirmação usam modal da interface, não `alert()`/`confirm()` nativos do JavaScript.
-- Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports` e `/integrations`. Verifique `docs/api.md` para métodos e limites completos.
+- Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports`, `/integrations` e `/members`. Verifique `docs/api.md` para métodos e limites completos.
 - Recursos de títulos são endpoints HTML (`/payables`, `/receivables`, `/titles/...`); não anunciar API JSON de títulos até ela existir e ser documentada/testada.
 
 ## 6. Segurança mínima obrigatória

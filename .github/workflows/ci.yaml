@@ -36,3 +36,44 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run tortoise -c fincore.config.database.TORTOISE_ORM migrate
       - run: uv run pytest
+      - name: Testes com o usuário restrito do banco (o mesmo do container app)
+        env:
+          APP_DB_USER: fincore_app_ci
+          APP_DB_PASSWORD: ci-app-password-local-only
+        run: |
+          uv run fincore-setup-app-db-role
+          DATABASE_URL=postgres://fincore_app_ci:ci-app-password-local-only@localhost:5432/fincore_test \
+            uv run pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gerar .env só para o CI
+        run: |
+          {
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+            echo "APP_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "AUTH_SECRET=$(openssl rand -hex 32)"
+          } > .env
+      - run: docker compose config -q
+      - name: Construir e subir app, migrate e db
+        run: docker compose up -d --build --wait --wait-timeout 180 app
+      - name: Aplicação responde e migrate terminou com sucesso
+        run: |
+          curl --fail --silent http://127.0.0.1:8080/health
+          test "$(docker compose ps -a migrate --format '{{.ExitCode}}')" = "0"
+      - name: Banco não fica exposto no host
+        run: |
+          if (exec 3<>/dev/tcp/127.0.0.1/5432) 2>/dev/null; then echo "5432 aberta"; exit 1; fi
+          if (exec 3<>/dev/tcp/127.0.0.1/5433) 2>/dev/null; then echo "5433 aberta"; exit 1; fi
+      - name: Container app roda sem root e com sistema de arquivos somente leitura
+        run: |
+          test "$(docker compose exec -T app id -u)" = "10001"
+          if docker compose exec -T app touch /app/escrita-proibida; then exit 1; fi
+      - name: Logs em caso de falha
+        if: failure()
+        run: docker compose logs
+      - name: Encerrar
+        if: always()
+        run: docker compose down -v
