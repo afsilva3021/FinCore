@@ -42,6 +42,22 @@ def parse_adjustment(value: str) -> Decimal:
     )
 
 
+async def _titles_for_operation_key(
+    organization: Organization, operation_key: UUID
+) -> list[FinancialTitle] | None:
+    """Reenvio com a mesma chave devolve os títulos já criados, sem duplicar."""
+    first = await FinancialTitle.get_or_none(operation_key=operation_key)
+    if first is None:
+        return None
+    if first.organization_id != organization.id:
+        raise ValueError("A chave de operação já foi usada.")
+    if first.installment_group is None:
+        return [first]
+    return await FinancialTitle.filter(
+        organization=organization, installment_group=first.installment_group
+    ).order_by("installment_number")
+
+
 async def create_titles(
     *,
     organization: Organization,
@@ -73,7 +89,12 @@ async def create_titles(
     charge_reference: str = "",
     attachment_reference: str = "",
     notes: str = "",
+    operation_key: UUID | None = None,
 ) -> list[FinancialTitle]:
+    if operation_key is not None:
+        replay = await _titles_for_operation_key(organization, operation_key)
+        if replay is not None:
+            return replay
     if title_type not in TITLE_TYPES:
         raise ValueError("Tipo de título inválido.")
     if not description.strip() or len(description) > 240:
@@ -152,6 +173,7 @@ async def create_titles(
                     )
                 created.append(
                     await FinancialTitle.create(
+                        operation_key=operation_key if installment_no == 1 else None,
                         organization=organization,
                         created_by=user,
                         counterparty=counterparty,
@@ -185,6 +207,11 @@ async def create_titles(
                     )
                 )
     except IntegrityError:
+        # Dois envios simultâneos com a mesma chave: o perdedor devolve o que o outro criou.
+        if operation_key is not None:
+            replay = await _titles_for_operation_key(organization, operation_key)
+            if replay is not None:
+                return replay
         raise ValueError("Não foi possível cadastrar o contato relacionado.") from None
     return created
 
@@ -220,6 +247,10 @@ async def settle_title(
 ) -> TitleSettlement:
     existing = await TitleSettlement.get_or_none(operation_key=operation_key)
     if existing:
+        # Reenvio só devolve a baixa original se for do mesmo título e organização;
+        # uma chave reaproveitada em outro contexto é conflito, nunca um vazamento.
+        if existing.organization_id != organization.id or existing.title_id != title_id:
+            raise ValueError("A chave de operação já foi usada.")
         return existing
     if quantize_money(amount_applied) <= 0:
         raise ValueError("O valor baixado deve ser maior que zero.")

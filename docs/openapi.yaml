@@ -1,0 +1,255 @@
+openapi: 3.1.0
+info:
+  title: FinCore API
+  version: "1.0"
+  description: |
+    API JSON do FinCore. Autenticação por cookie de sessão (faça login em /login);
+    toda requisição de escrita exige o header `X-CSRF-Token` com o token de
+    `GET /api/v1/session`. Valores monetários são strings decimais com ponto ("250.00").
+    Perfil `viewer` recebe 403 em qualquer escrita.
+servers:
+  - url: http://127.0.0.1:8080
+security:
+  - session: []
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: fincore_session
+    csrf:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+    Offset:
+      name: offset
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+    TitleId:
+      name: title_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    TransactionId:
+      name: transaction_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    Money:
+      type: string
+      pattern: '^\d+(\.\d{1,2})?$'
+      examples: ["250.00"]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string, examples: [invalid_title]}
+            message: {type: string}
+    Title:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        type: {type: string, enum: [payable, receivable]}
+        description: {type: string}
+        status: {type: string, enum: [open, partial, settled, cancelled]}
+        overdue: {type: boolean, description: Calculado a partir do vencimento e da situação.}
+        original_amount: {$ref: '#/components/schemas/Money'}
+        open_balance: {$ref: '#/components/schemas/Money'}
+        currency: {type: string, examples: [BRL]}
+        issue_date: {type: string, format: date}
+        due_date: {type: string, format: date}
+        payment_method: {type: string}
+        installment_number: {type: integer}
+        installment_count: {type: integer}
+        installment_group: {type: [string, "null"], format: uuid}
+        counterparty_id: {type: [string, "null"], format: uuid}
+        account_id: {type: string, format: uuid}
+        category_id: {type: [string, "null"], format: uuid}
+        document_number: {type: [string, "null"]}
+    TitleCreate:
+      type: object
+      required: [operation_key, type, description, counterparty_name, account_id, amount,
+                 issue_date, due_date, payment_method]
+      properties:
+        operation_key: {type: string, format: uuid, description: Reenvio com a mesma chave devolve os títulos já criados.}
+        type: {type: string, enum: [payable, receivable]}
+        description: {type: string, maxLength: 240}
+        counterparty_name: {type: string}
+        account_id: {type: string, format: uuid}
+        category_id: {type: string, format: uuid}
+        amount: {$ref: '#/components/schemas/Money'}
+        installments: {type: integer, minimum: 1, maximum: 36, default: 1}
+        issue_date: {type: string, format: date}
+        due_date: {type: string, format: date, description: Vencimento da 1ª parcela; as demais são mensais.}
+        payment_method: {type: string, enum: [cash, bank_transfer, pix, boleto, card, other]}
+        document_number: {type: string}
+        notes: {type: string}
+    SettlementCreate:
+      type: object
+      required: [operation_key, amount_applied, paid_on, account_id, payment_method]
+      properties:
+        operation_key: {type: string, format: uuid}
+        amount_applied: {$ref: '#/components/schemas/Money'}
+        paid_on: {type: string, format: date}
+        account_id: {type: string, format: uuid}
+        payment_method: {type: string, enum: [cash, bank_transfer, pix, boleto, card, other]}
+        discount: {$ref: '#/components/schemas/Money'}
+        interest: {$ref: '#/components/schemas/Money'}
+        fine: {$ref: '#/components/schemas/Money'}
+        fees: {$ref: '#/components/schemas/Money'}
+        proof_reference: {type: string}
+        notes: {type: string}
+    Settlement:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        operation_key: {type: string, format: uuid}
+        paid_on: {type: string, format: date}
+        amount_applied: {$ref: '#/components/schemas/Money'}
+        discount: {$ref: '#/components/schemas/Money'}
+        interest: {$ref: '#/components/schemas/Money'}
+        fine: {$ref: '#/components/schemas/Money'}
+        fees: {$ref: '#/components/schemas/Money'}
+        net_amount:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: "aplicado − desconto + juros + multa ± tarifas (soma em títulos a pagar, subtrai em títulos a receber)"
+        payment_method: {type: string}
+        account_id: {type: string, format: uuid}
+        financial_transaction_id: {type: string, format: uuid}
+  responses:
+    Unauthenticated:
+      description: Sessão ausente ou expirada.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Forbidden:
+      description: CSRF inválido ou perfil somente leitura.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    NotFound:
+      description: Registro inexistente ou de outra organização.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Invalid:
+      description: Dados inválidos ou regra de negócio violada (a mensagem diz qual).
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Conflict:
+      description: Chave de operação reaproveitada ou transição de estado não permitida.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+paths:
+  /api/v1/health:
+    get:
+      summary: Saúde da API
+      security: []
+      responses:
+        "200": {description: OK}
+  /api/v1/session:
+    get:
+      summary: Token CSRF para as escritas
+      responses:
+        "200":
+          description: Token e cookie CSRF assinados.
+          content:
+            application/json:
+              schema: {type: object, properties: {csrf_token: {type: string}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/titles:
+    get:
+      summary: Lista títulos a pagar/receber
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: type, in: query, schema: {type: string, enum: [payable, receivable]}}
+        - {name: status, in: query, schema: {type: string, enum: [open, partial, settled, cancelled]}}
+      responses:
+        "200":
+          description: Página de títulos com saldo em aberto derivado das baixas.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Title'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      summary: Cadastra título (à vista ou parcelado)
+      description: Não movimenta caixa nem aparece no extrato. Parcelas somam exatamente o total.
+      security: [{session: [], csrf: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/TitleCreate'}}}
+      responses:
+        "201":
+          description: Títulos criados (ou os mesmos, num reenvio com a mesma operation_key).
+          content:
+            application/json:
+              schema: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Title'}}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/titles/{title_id}:
+    get:
+      summary: Detalhe do título com as baixas
+      parameters: [{$ref: '#/components/parameters/TitleId'}]
+      responses:
+        "200":
+          description: Título e baixas.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/Title'}
+                  - type: object
+                    properties:
+                      settlements: {type: array, items: {$ref: '#/components/schemas/Settlement'}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/titles/{title_id}/settlements:
+    post:
+      summary: Registra baixa (total ou parcial)
+      description: Cria a transação liquidada e o lançamento contábil vinculados, de forma atômica.
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/TitleId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SettlementCreate'}}}
+      responses:
+        "201":
+          description: Baixa registrada (ou a mesma, num reenvio com a mesma operation_key).
+          content: {application/json: {schema: {$ref: '#/components/schemas/Settlement'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/titles/{title_id}/cancel:
+    post:
+      summary: Cancela título em aberto sem baixas
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/TitleId'}]
+      responses:
+        "200":
+          description: Título cancelado.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Title'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/transactions/{transaction_id}:
+    get:
+      summary: Detalhe de uma movimentação
+      parameters: [{$ref: '#/components/parameters/TransactionId'}]
+      responses:
+        "200": {description: Movimentação.}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "404": {$ref: '#/components/responses/NotFound'}

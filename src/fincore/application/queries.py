@@ -229,3 +229,18 @@ async def reconciliation_candidates(
     ).order_by("description"):
         candidates.setdefault((movement.account_id, movement.competence_date), []).append(movement)
     return candidates
+
+
+def titles_api_query(
+    organization: Organization, *, title_type: str | None = None, status: str | None = None
+) -> QuerySet[FinancialTitle]:
+    query = FinancialTitle.filter(organization=organization)
+    if title_type in {"payable", "receivable"}:
+        query = query.filter(title_type=title_type)
+    if status in {"open", "partial", "settled", "cancelled"}:
+        query = query.filter(status=status)
+    return query.order_by("due_date", "installment_number", "created_at")
+
+
+async def title_settlements(title: FinancialTitle) -> list[TitleSettlement]:
+    return await TitleSettlement.filter(title=title).order_by("paid_on", "created_at")

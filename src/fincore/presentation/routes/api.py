@@ -42,61 +42,67 @@ from fincore.presentation.web import (
 )
 
 
+def json_response(data: object, status: int = 200) -> Response:
+    return Response(
+        status_code=status,
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+        },
+        body=json.dumps(data, ensure_ascii=False),
+    )
+
+
+def pagination(request: Request) -> tuple[int, int]:
+    try:
+        limit = int(request.query_params.get("limit", "50"))
+        offset = int(request.query_params.get("offset", "0"))
+    except ValueError as exc:
+        raise ValueError from exc
+    if not 1 <= limit <= 100 or offset < 0:
+        raise ValueError
+    return limit, offset
+
+
+def json_payload(request: Request) -> dict[str, object]:
+    raw = request.body.decode() if isinstance(request.body, bytes) else request.body
+    try:
+        payload = json.loads(raw or "{}")
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError("Envie um corpo JSON válido.") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("O corpo JSON deve ser um objeto.")
+    return payload
+
+
+def require_csrf(request: Request) -> bool:
+    return _valid_csrf(request, request.headers.get("x-csrf-token") or "")
+
+
+def error_response(code: str, message: str, status: int) -> Response:
+    return json_response({"error": {"code": code, "message": message}}, status)
+
+
+def movement_json(item: FinancialTransaction) -> dict[str, object]:
+    return {
+        "id": str(item.id),
+        "type": item.transaction_type,
+        "description": item.description,
+        "amount": str(item.amount),
+        "currency": item.currency,
+        "status": item.status,
+        "competence_date": item.competence_date.isoformat(),
+        "due_date": item.due_date.isoformat() if item.due_date else None,
+        "settled_at": item.settled_at.isoformat() if item.settled_at else None,
+        "settled_by_id": str(item.settled_by_id) if item.settled_by_id else None,
+        "account_id": str(item.account_id),
+        "category_id": str(item.category_id) if item.category_id else None,
+        "transfer_id": str(item.transfer_id) if item.transfer_id else None,
+        "reversal_of_id": str(item.reversal_of_id) if item.reversal_of_id else None,
+    }
+
+
 def register_api_routes(app: object) -> None:
-    def json_response(data: object, status: int = 200) -> Response:
-        return Response(
-            status_code=status,
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Cache-Control": "no-store",
-            },
-            body=json.dumps(data, ensure_ascii=False),
-        )
-
-    def pagination(request: Request) -> tuple[int, int]:
-        try:
-            limit = int(request.query_params.get("limit", "50"))
-            offset = int(request.query_params.get("offset", "0"))
-        except ValueError as exc:
-            raise ValueError from exc
-        if not 1 <= limit <= 100 or offset < 0:
-            raise ValueError
-        return limit, offset
-
-    def json_payload(request: Request) -> dict[str, object]:
-        raw = request.body.decode() if isinstance(request.body, bytes) else request.body
-        try:
-            payload = json.loads(raw or "{}")
-        except (json.JSONDecodeError, TypeError) as exc:
-            raise ValueError("Envie um corpo JSON válido.") from exc
-        if not isinstance(payload, dict):
-            raise ValueError("O corpo JSON deve ser um objeto.")
-        return payload
-
-    def require_csrf(request: Request) -> bool:
-        return _valid_csrf(request, request.headers.get("x-csrf-token") or "")
-
-    def error_response(code: str, message: str, status: int) -> Response:
-        return json_response({"error": {"code": code, "message": message}}, status)
-
-    def movement_json(item: FinancialTransaction) -> dict[str, object]:
-        return {
-            "id": str(item.id),
-            "type": item.transaction_type,
-            "description": item.description,
-            "amount": str(item.amount),
-            "currency": item.currency,
-            "status": item.status,
-            "competence_date": item.competence_date.isoformat(),
-            "due_date": item.due_date.isoformat() if item.due_date else None,
-            "settled_at": item.settled_at.isoformat() if item.settled_at else None,
-            "settled_by_id": str(item.settled_by_id) if item.settled_by_id else None,
-            "account_id": str(item.account_id),
-            "category_id": str(item.category_id) if item.category_id else None,
-            "transfer_id": str(item.transfer_id) if item.transfer_id else None,
-            "reversal_of_id": str(item.reversal_of_id) if item.reversal_of_id else None,
-        }
-
     @app.get("/api/v1/health")
     async def api_health(request: Request) -> Response:
         if await database_is_ready():

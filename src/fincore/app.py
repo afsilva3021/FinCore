@@ -19,6 +19,7 @@ from fincore.presentation.routes import (
     register_member_routes,
     register_reconciliation_routes,
     register_report_routes,
+    register_title_api_routes,
     register_web_routes,
 )
 from fincore.presentation.security_headers import apply_security_headers
@@ -77,6 +78,7 @@ register_reconciliation_routes(app)
 register_report_routes(app)
 register_demo_integration_routes(app)
 register_api_routes(app)
+register_title_api_routes(app)
 
 
 def main() -> None:

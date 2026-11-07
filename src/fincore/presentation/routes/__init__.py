@@ -2,6 +2,7 @@
 
 from fincore.presentation.routes.accounting import register_accounting_routes
 from fincore.presentation.routes.api import register_api_routes
+from fincore.presentation.routes.api_titles import register_title_api_routes
 from fincore.presentation.routes.auth import register_web_routes
 from fincore.presentation.routes.contacts import register_counterparty_routes
 from fincore.presentation.routes.finance import register_finance_routes
@@ -18,6 +19,7 @@ __all__ = [
     "register_report_routes",
     "register_demo_integration_routes",
     "register_api_routes",
+    "register_title_api_routes",
     "register_counterparty_routes",
     "register_member_routes",
 ]

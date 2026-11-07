@@ -193,6 +193,8 @@ class FinancialTitle(Model):
         "models.Category", related_name="titles", null=True, on_delete=fields.RESTRICT
     )
     installment_group = fields.UUIDField(null=True, db_index=True)
+    # Chave de idempotência da criação (API); fica só na 1ª parcela do grupo.
+    operation_key = fields.UUIDField(null=True, unique=True)
     title_type = fields.CharField(max_length=12)
     description = fields.CharField(max_length=240)
     document_number = fields.CharField(max_length=100, null=True)

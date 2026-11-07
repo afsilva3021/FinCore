@@ -169,3 +169,10 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Nenhuma consulta ORM direta nas rotas: leitura em `application/queries.py`; conciliação sem N+1 de candidatos.
 - [x] `tests/unit/test_architecture.py`: domínio sem framework/ORM e apresentação sem consulta ORM direta.
 - [x] Servidor real iniciado e 12 telas navegadas no Chromium após a refatoração.
+
+## API de títulos (2026-11-06)
+
+- [x] `GET/POST /api/v1/titles`, `GET /api/v1/titles/{id}`, `POST .../settlements`, `POST .../cancel`.
+- [x] Idempotência na criação (`FinancialTitle.operation_key`, migration `0018`; corrida resolvida devolvendo o que o outro envio criou) e nas baixas.
+- [x] Correção de segurança: `settle_title` devolvia a baixa existente para qualquer chave repetida, inclusive de outra organização; agora só para o mesmo título e organização (senão `409`).
+- [x] `docs/openapi.yaml` validado com `openapi-spec-validator`.

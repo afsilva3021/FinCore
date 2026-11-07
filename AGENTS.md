@@ -116,7 +116,7 @@ Consulte `README.md`, `docs/progress.md`, `docs/api.md` e os testes antes de dec
 - Plano contábil, diário de partidas dobradas, livro razão, rascunho/efetivação/estorno e backfill idempotente.
 - Importação OFX 1.x SGML e conciliação manual com deduplicação e auditoria. CNAB tem somente protocolo de adapter sem layout bancário implementado.
 - Exportação de relatório CSV/PDF e simuladores locais sem integrações externas reais.
-- API JSON `/api/v1` para sessão, contas, categorias e transações. Títulos são atualmente operados pelas páginas web, sem API JSON própria.
+- API JSON `/api/v1` para sessão, contas, categorias, transações e títulos (listar, detalhar, cadastrar com parcelas, baixar e cancelar, com idempotência por `operation_key`). Contrato em `docs/api.md` e `docs/openapi.yaml`.
 
 Entidades Tortoise existentes: `Organization`, `User`, `Membership`, `FinancialAccount`, `Category`, `FinancialTransaction`, `Counterparty`, `FinancialTitle`, `TitleSettlement`, `LedgerAccount`, `JournalEntry`, `JournalEntryLine`, `ImportedStatementTransaction`, `ReconciliationMatch` e `ReconciliationEvent`. Seus vínculos e responsabilidades estão no README e `src/fincore/infrastructure/models.py`. Não duplicar entidades antes de inspecionar o modelo e migrations.
 
@@ -172,7 +172,7 @@ https://github.com/firefly-iii/firefly-iii
 - Não expor funcionalidades como prontas na interface quando forem apenas simuladas; sinalizar claramente o ambiente de demonstração.
 - A interface atual é renderizada no servidor com Robyn/Jinja/Bootstrap. Formulários seguem sessão e CSRF; mensagens de confirmação usam modal da interface, não `alert()`/`confirm()` nativos do JavaScript.
 - Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports`, `/integrations` e `/members`. Verifique `docs/api.md` para métodos e limites completos.
-- Recursos de títulos são endpoints HTML (`/payables`, `/receivables`, `/titles/...`); não anunciar API JSON de títulos até ela existir e ser documentada/testada.
+- Títulos têm páginas HTML (`/payables`, `/receivables`, `/titles/...`) e API JSON (`/api/v1/titles`). Mudanças na API de títulos atualizam `docs/openapi.yaml` e devem continuar passando no `openapi-spec-validator`.
 
 ## 6. Segurança mínima obrigatória
 

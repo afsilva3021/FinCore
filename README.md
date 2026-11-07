@@ -10,7 +10,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0017`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- Migrations versionadas até `0018`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
@@ -22,6 +22,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-06 | API JSON de títulos (`/api/v1/titles`: listar, detalhar, cadastrar com parcelas, baixar, cancelar) com idempotência por `operation_key` e especificação OpenAPI em `docs/openapi.yaml`. Correção: reenvio de baixa com chave de outra organização agora é conflito `409` em vez de devolver a baixa alheia. Migration `0018`. |
 | 2026-11-06 | Arquitetura: `web.py` (2.600 linhas) dividido em `presentation/routes/` por área; decorators `login_required`/`api_login_required` no lugar de 43 blocos repetidos; todas as consultas das rotas movidas para `application/queries.py` (inclusive o N+1 restante da conciliação); testes de arquitetura. |
 | 2026-11-06 | Camada `domain/` com as regras financeiras puras (parcelas, baixas, estados de título, partidas dobradas), testadas sem banco; arredondamento contábil padronizado em meio para cima. |
 | 2026-11-06 | Integridade e desempenho: 17 `CHECK` constraints no banco (migration `0017`), saldos contábeis e financeiros agregados no banco (fim dos N+1), paginação de 50 itens nas listas (antes havia um corte silencioso em 100/200) e teste de isolamento entre organizações em todas as rotas com ID. |
