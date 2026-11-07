@@ -68,7 +68,6 @@ from fincore.application.members import (
     role_label,
     set_member_active,
 )
-from fincore.application.money import parse_api_amount
 from fincore.application.reconciliation import (
     import_ofx,
     match_statement_transaction,
@@ -84,6 +83,7 @@ from fincore.application.titles import (
     title_balances,
 )
 from fincore.config.settings import settings
+from fincore.domain.money import parse_api_amount
 from fincore.infrastructure.cep_lookup import CepLookupError, lookup_cep
 from fincore.infrastructure.models import (
     Category,

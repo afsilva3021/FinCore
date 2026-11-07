@@ -1,10 +1,17 @@
-"""Conversão de valores monetários digitados em formulários (pt-BR) e na API."""
+"""Dinheiro: precisão, limites e conversão de valores pt-BR e da API para `Decimal`."""
 
 import re
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 CENT = Decimal("0.01")
+# Limite de NUMERIC(15, 2) no banco.
 MAX_AMOUNT = Decimal("9999999999999.99")
+
+
+def quantize_money(value: Decimal) -> Decimal:
+    """Arredonda para centavos (meio para cima), a regra usada em todo o sistema."""
+    return value.quantize(CENT, rounding=ROUND_HALF_UP)
+
 
 # "1.234,56", "1234,56", "1.234" (milhar), "1234.56" (ponto decimal), "1234".
 _BR_WITH_COMMA = re.compile(r"^(\d{1,3}(\.\d{3})+|\d+),\d+$")

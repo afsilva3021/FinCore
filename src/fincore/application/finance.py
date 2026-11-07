@@ -9,7 +9,7 @@ from tortoise.exceptions import IntegrityError
 from tortoise.functions import Sum
 from tortoise.transactions import in_transaction
 
-from fincore.application.money import parse_brl
+from fincore.domain.money import parse_brl
 from fincore.infrastructure.models import (
     Category,
     FinancialAccount,

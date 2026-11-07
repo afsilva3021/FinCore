@@ -4,8 +4,8 @@ import pytest
 
 from fincore.application.accounting import parse_line_amount
 from fincore.application.finance import parse_money, parse_opening_balance
-from fincore.application.money import parse_api_amount
 from fincore.application.titles import parse_adjustment
+from fincore.domain.money import parse_api_amount
 
 
 @pytest.mark.parametrize(

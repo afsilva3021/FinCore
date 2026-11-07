@@ -22,6 +22,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-06 | Camada `domain/` com as regras financeiras puras (parcelas, baixas, estados de título, partidas dobradas), testadas sem banco; arredondamento contábil padronizado em meio para cima. |
 | 2026-11-06 | Integridade e desempenho: 17 `CHECK` constraints no banco (migration `0017`), saldos contábeis e financeiros agregados no banco (fim dos N+1), paginação de 50 itens nas listas (antes havia um corte silencioso em 100/200) e teste de isolamento entre organizações em todas as rotas com ID. |
 | 2026-11-06 | Perfis de acesso (Proprietário, Financeiro, Somente leitura) com página `/members`; bloqueio central de escrita para quem é somente leitura. CI passa a construir a imagem Docker, subir o Compose e rodar os testes com o usuário restrito do banco. |
 | 2026-11-06 | Segurança de login: bloqueio de 15 min após 5 falhas por e-mail ou 20 por IP, tempo de resposta igual para e-mail inexistente, logout que revoga a sessão em todos os dispositivos e headers de segurança (CSP sem `unsafe-inline`, `X-Frame-Options`, `nosniff`, HSTS com HTTPS). Migration `0016`. |
@@ -80,7 +81,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 - Valores monetários usam `Decimal` no backend e `NUMERIC(15,2)` no banco; nunca usar `float` para dinheiro.
 - O banco também aplica as regras principais com `CHECK` constraints (migration `0017`): valores positivos, débito **ou** crédito em cada linha contábil, ajustes de baixa não negativos e tipos/situações válidos. Se um banco antigo tiver linhas fora da regra, a migration não falha: cria a constraint para gravações novas e avisa (`NOTICE`) para corrigir os dados e rodar `VALIDATE CONSTRAINT`.
 - Transações, títulos, contatos, diário contábil e conciliação são paginados em 50 itens (`?page=N`), preservando os filtros.
-- Formulários aceitam valores em pt-BR (`1.500`, `1.234,56`, `R$ 1.500,00`): ponto entre grupos de 3 dígitos é milhar e vírgula é decimal; formatos ambíguos (`1,000.50`) são recusados. A API JSON usa a notação decimal canônica (`"250.00"`). Regras em `application/money.py`.
+- Formulários aceitam valores em pt-BR (`1.500`, `1.234,56`, `R$ 1.500,00`): ponto entre grupos de 3 dígitos é milhar e vírgula é decimal; formatos ambíguos (`1,000.50`) são recusados. A API JSON usa a notação decimal canônica (`"250.00"`). Regras em `domain/money.py`.
 
 **Transações e títulos não são o mesmo cadastro.** Uma transação representa um movimento financeiro que aparece no extrato; um título representa uma obrigação a pagar ou um recebível. Não transformar títulos em tipos, filtros ou aliases de transações.
 
@@ -292,8 +293,8 @@ node --check static/js/app.js
 ```text
 src/fincore/
   app.py                         inicialização Robyn, health e lifecycle ORM
-  application/                   casos de uso financeiro, contábil, títulos, contatos e OFX
-  application/money.py           conversão de valores pt-BR e da API para Decimal
+  domain/                        regras puras (sem banco/framework): dinheiro, partidas dobradas, títulos
+  application/                   casos de uso: buscam dados, aplicam as regras do domain e gravam
   config/                        variáveis de ambiente e conexão ORM
   infrastructure/                 modelos Tortoise e migrations versionadas
   infrastructure/db_roles.py     usuário restrito do banco usado pelo container app

@@ -8,7 +8,14 @@ from tortoise.exceptions import IntegrityError
 from tortoise.functions import Sum
 from tortoise.transactions import in_transaction
 
-from fincore.application.money import parse_brl
+from fincore.domain.accounting import (
+    ACCOUNT_TYPES,
+    ensure_balanced,
+    ensure_can_post,
+    normal_balance,
+    normalize_journal_lines,
+)
+from fincore.domain.money import parse_brl
 from fincore.infrastructure.models import (
     JournalEntry,
     JournalEntryLine,
@@ -16,9 +23,6 @@ from fincore.infrastructure.models import (
     Organization,
     User,
 )
-
-CENT = Decimal("0.01")
-ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense"}
 
 
 def parse_line_amount(value: str) -> Decimal:
@@ -34,22 +38,7 @@ def parse_line_amount(value: str) -> Decimal:
 async def _validated_lines(
     organization: Organization, lines: list[tuple[UUID, Decimal, Decimal]]
 ) -> list[tuple[LedgerAccount, Decimal, Decimal]]:
-    clean_lines = [
-        (account_id, debit.quantize(CENT), credit.quantize(CENT))
-        for account_id, debit, credit in lines
-        if debit or credit
-    ]
-    if len(clean_lines) < 2:
-        raise ValueError("Um lançamento precisa de pelo menos duas linhas.")
-    for _, debit, credit in clean_lines:
-        if (
-            debit < 0
-            or credit < 0
-            or debit > Decimal("9999999999999.99")
-            or credit > Decimal("9999999999999.99")
-            or (debit > 0 and credit > 0)
-        ):
-            raise ValueError("Cada linha deve ter um valor positivo em débito ou crédito.")
+    clean_lines = normalize_journal_lines(lines)
     account_ids = {account_id for account_id, _, _ in clean_lines}
     accounts = await LedgerAccount.filter(
         id__in=account_ids, organization=organization, is_active=True
@@ -193,18 +182,11 @@ async def post_journal_entry(organization: Organization, entry_id: UUID) -> Jour
             raise ValueError("O lançamento não existe.")
         if entry.status == "posted":
             return entry
-        if entry.status != "draft":
-            raise ValueError("O lançamento não pode ser efetivado neste estado.")
+        ensure_can_post(entry.status)
         lines = await JournalEntryLine.filter(journal_entry=entry).all()
-        if len(lines) < 2:
-            raise ValueError("Um lançamento precisa de pelo menos duas linhas.")
-        currencies = {line.currency for line in lines}
-        if len(currencies) != 1:
-            raise ValueError("Débitos e créditos precisam estar na mesma moeda.")
-        debit_total = sum((line.debit for line in lines), Decimal("0.00"))
-        credit_total = sum((line.credit for line in lines), Decimal("0.00"))
-        if debit_total == 0 or debit_total != credit_total:
-            raise ValueError("O lançamento precisa ter débitos iguais aos créditos.")
+        ensure_balanced(
+            [(line.debit, line.credit) for line in lines], {line.currency for line in lines}
+        )
         entry.status = "posted"
         entry.posted_at = datetime.now(UTC)
         await entry.save(update_fields=["status", "posted_at"])
@@ -270,7 +252,7 @@ async def get_ledger_balances(
     }
     for account in accounts:
         debit, credit = sums.get(account.id, (Decimal("0.00"), Decimal("0.00")))
-        balance = debit - credit if account.account_type in {"asset", "expense"} else credit - debit
+        balance = normal_balance(account.account_type, debit, credit)
         direct_balances[account.id] = balance
         if account.parent_id:
             children.setdefault(account.parent_id, []).append(account)

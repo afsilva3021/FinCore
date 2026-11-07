@@ -1,15 +1,23 @@
 """Cadastro de títulos e baixas, separado do extrato de transações."""
 
-import calendar
 from datetime import UTC, date, datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
 from fincore.application.finance import _create_movement_journal
-from fincore.application.money import parse_brl
+from fincore.domain.money import MAX_AMOUNT, parse_brl, quantize_money
+from fincore.domain.titles import (
+    PAYMENT_METHODS,
+    TITLE_TYPES,
+    calculate_settlement,
+    ensure_can_cancel,
+    ensure_can_settle,
+    open_balance,
+    split_installments,
+)
 from fincore.infrastructure.models import (
     Category,
     Counterparty,
@@ -21,30 +29,7 @@ from fincore.infrastructure.models import (
     User,
 )
 
-CENT = Decimal("0.01")
-MAX_AMOUNT = Decimal("9999999999999.99")
-TITLE_TYPES = {"payable", "receivable"}
 PARTY_TYPES = {"supplier", "customer", "other"}
-PAYMENT_METHODS = {"cash", "bank_transfer", "pix", "boleto", "card", "other"}
-
-
-def _quantize(value: Decimal) -> Decimal:
-    return value.quantize(CENT, rounding=ROUND_HALF_UP)
-
-
-def _monthly_date(start: date, offset: int) -> date:
-    month_index = start.month - 1 + offset
-    year = start.year + month_index // 12
-    month = month_index % 12 + 1
-    day = min(start.day, calendar.monthrange(year, month)[1])
-    return date(year, month, day)
-
-
-def _validate_adjustment(value: Decimal, label: str) -> Decimal:
-    amount = _quantize(value)
-    if not amount.is_finite() or amount < 0 or amount > MAX_AMOUNT:
-        raise ValueError(f"{label} deve ser um valor igual ou superior a zero.")
-    return amount
 
 
 def parse_adjustment(value: str) -> Decimal:
@@ -127,8 +112,8 @@ async def create_titles(
             raise ValueError("Selecione uma categoria analítica válida para este título.")
 
     name = counterparty_name.strip()
-    total_amount = _quantize(amount)
-    base_amount = _quantize(total_amount / count)
+    total_amount = quantize_money(amount)
+    installments = split_installments(total_amount, count, due_date)
     group_id = uuid4() if count > 1 else None
     created: list[FinancialTitle] = []
     try:
@@ -157,13 +142,9 @@ async def create_titles(
                     is_customer=party_type == "customer",
                     is_supplier=party_type == "supplier",
                 )
-            allocated = Decimal("0.00")
-            for installment_no in range(1, count + 1):
-                installment_amount = (
-                    total_amount - allocated if installment_no == count else base_amount
-                )
-                allocated += installment_amount
-                installment_due = _monthly_date(due_date, installment_no - 1)
+            for installment_no, (installment_amount, installment_due) in enumerate(
+                installments, start=1
+            ):
                 installment_description = description.strip()
                 if count > 1:
                     installment_description = (
@@ -212,14 +193,11 @@ async def title_balances(titles: list[FinancialTitle]) -> dict[UUID, Decimal]:
     if not titles:
         return {}
     settlements = await TitleSettlement.filter(title_id__in=[title.id for title in titles]).all()
-    paid: dict[UUID, Decimal] = {}
+    applied: dict[UUID, list[Decimal]] = {}
     for settlement in settlements:
-        paid[settlement.title_id] = paid.get(settlement.title_id, Decimal("0.00")) + (
-            settlement.amount_applied
-        )
+        applied.setdefault(settlement.title_id, []).append(settlement.amount_applied)
     return {
-        title.id: _quantize(title.original_amount - paid.get(title.id, Decimal("0.00")))
-        for title in titles
+        title.id: open_balance(title.original_amount, applied.get(title.id, [])) for title in titles
     }
 
 
@@ -243,12 +221,7 @@ async def settle_title(
     existing = await TitleSettlement.get_or_none(operation_key=operation_key)
     if existing:
         return existing
-    applied = _quantize(amount_applied)
-    discount = _validate_adjustment(discount, "Desconto")
-    interest = _validate_adjustment(interest, "Juros")
-    fine = _validate_adjustment(fine, "Multa")
-    fees = _validate_adjustment(fees, "Tarifas")
-    if applied <= 0 or applied > MAX_AMOUNT:
+    if quantize_money(amount_applied) <= 0:
         raise ValueError("O valor baixado deve ser maior que zero.")
     if payment_method not in PAYMENT_METHODS:
         raise ValueError("Selecione uma forma de pagamento válida.")
@@ -261,27 +234,19 @@ async def settle_title(
         )
         if title is None:
             raise ValueError("Título não encontrado nesta organização.")
-        if title.status == "cancelled":
-            raise ValueError("Títulos cancelados não podem ser baixados.")
-        if title.status == "settled":
-            raise ValueError("Este título já está liquidado.")
-        previous = await TitleSettlement.filter(title=title).all()
-        balance = _quantize(
-            title.original_amount - sum((item.amount_applied for item in previous), Decimal("0.00"))
+        ensure_can_settle(title.status)
+        previous = await TitleSettlement.filter(title=title).values_list(
+            "amount_applied", flat=True
         )
-        if applied > balance:
-            raise ValueError("O valor baixado não pode exceder o saldo em aberto.")
-        if discount > applied:
-            raise ValueError("O desconto não pode exceder o valor aplicado ao título.")
-        net_amount = _quantize(
-            applied
-            - discount
-            + interest
-            + fine
-            + (fees if title.title_type == "payable" else -fees)
+        amounts = calculate_settlement(
+            title_type=title.title_type,
+            balance=open_balance(title.original_amount, previous),
+            applied=amount_applied,
+            discount=discount,
+            interest=interest,
+            fine=fine,
+            fees=fees,
         )
-        if net_amount <= 0 or net_amount > MAX_AMOUNT:
-            raise ValueError("O valor líquido precisa ser maior que zero.")
         account = await FinancialAccount.get_or_none(
             id=account_id, organization=organization, is_active=True
         )
@@ -297,7 +262,7 @@ async def settle_title(
             settled_by=user,
             transaction_type="expense" if title.title_type == "payable" else "income",
             description=f"Baixa de título: {title.description}"[:240],
-            amount=net_amount,
+            amount=amounts.net_amount,
             competence_date=paid_on,
             due_date=None,
             settled_at=datetime.now(UTC),
@@ -312,17 +277,17 @@ async def settle_title(
             account=account,
             operation_key=operation_key,
             payment_method=payment_method,
-            amount_applied=applied,
-            discount=discount,
-            interest=interest,
-            fine=fine,
-            fees=fees,
-            net_amount=net_amount,
+            amount_applied=amounts.applied,
+            discount=amounts.discount,
+            interest=amounts.interest,
+            fine=amounts.fine,
+            fees=amounts.fees,
+            net_amount=amounts.net_amount,
             paid_on=paid_on,
             proof_reference=proof_reference.strip() or None,
             notes=notes.strip() or None,
         )
-        title.status = "settled" if applied == balance else "partial"
+        title.status = amounts.new_status
         await title.save(update_fields=["status"])
         return settlement
 
@@ -336,10 +301,7 @@ async def cancel_title(*, organization: Organization, title_id: UUID) -> Financi
         )
         if title is None:
             raise ValueError("Título não encontrado nesta organização.")
-        if title.status != "open":
-            raise ValueError("Somente títulos em aberto sem baixas podem ser cancelados.")
-        if await TitleSettlement.filter(title=title).exists():
-            raise ValueError("Títulos com baixas não podem ser cancelados.")
+        ensure_can_cancel(title.status, await TitleSettlement.filter(title=title).exists())
         title.status = "cancelled"
         await title.save(update_fields=["status"])
         return title
