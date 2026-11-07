@@ -20,6 +20,19 @@ class User(Model):
     full_name = fields.CharField(max_length=160)
     created_at = fields.DatetimeField(auto_now_add=True)
     is_active = fields.BooleanField(default=True)
+    # Incrementado no logout: invalida todos os tokens de sessão já emitidos.
+    session_version = fields.IntField(default=1)
+
+
+class LoginThrottle(Model):
+    """Contador de falhas de login por chave (e-mail ou IP) para bloqueio temporário."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    key = fields.CharField(max_length=320, unique=True)
+    failures = fields.IntField(default=0)
+    window_started_at = fields.DatetimeField()
+    locked_until = fields.DatetimeField(null=True)
+    updated_at = fields.DatetimeField(auto_now=True)
 
 
 class Membership(Model):

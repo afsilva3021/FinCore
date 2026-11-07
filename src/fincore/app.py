@@ -10,6 +10,7 @@ from tortoise import Tortoise
 from fincore.config.database import TORTOISE_ORM
 from fincore.config.settings import settings, startup_problems
 from fincore.presentation.health import database_is_ready
+from fincore.presentation.security_headers import apply_security_headers
 from fincore.presentation.web import (
     register_accounting_routes,
     register_api_routes,
@@ -28,6 +29,11 @@ logging.basicConfig(
 logger = logging.getLogger("fincore")
 app = Robyn(__file__)
 app.serve_directory(route="/static", directory_path=str(Path(__file__).parents[2] / "static"))
+
+
+@app.after_request()
+def security_headers(response: Response) -> Response:
+    return apply_security_headers(response, https=settings.secure_cookies)
 
 
 @app.startup_handler

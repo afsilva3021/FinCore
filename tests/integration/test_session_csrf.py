@@ -52,7 +52,9 @@ async def test_forms_keep_working_after_the_first_hour_of_session(monkeypatch) -
     issued_at = time.time() - 2 * 60 * 60
     monkeypatch.setattr("itsdangerous.timed.time.time", lambda: issued_at)
     token = "token-emitido-ha-duas-horas"
-    session = serializer.dumps({"uid": str(user.id), "org": str(membership.organization_id)})
+    session = serializer.dumps(
+        {"uid": str(user.id), "org": str(membership.organization_id), "sv": user.session_version}
+    )
     csrf_cookie = csrf_serializer.dumps(token)
     monkeypatch.undo()
 

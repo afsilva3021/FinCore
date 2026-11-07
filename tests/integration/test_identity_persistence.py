@@ -154,7 +154,9 @@ async def test_synthetic_categories_group_analytic_subcategories_and_balances() 
     assert balances[group_account.id] == Decimal("35.00")
     assert balances[leaf_account.id] == Decimal("35.00")
 
-    session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
+    session = serializer.dumps(
+        {"uid": str(user.id), "org": str(organization.id), "sv": user.session_version}
+    )
     csrf_cookie = csrf_serializer.dumps("category-tree-test")
     headers = {"cookie": f"{COOKIE_AUTH}={session}; {COOKIE_CSRF}={csrf_cookie}"}
     client = RobynTestClient(app)
@@ -460,7 +462,9 @@ async def test_authenticated_json_api_creates_and_settles_financial_movement() -
     assert membership is not None
     organization = await membership.organization
     token = "csrf-api-integration-token"
-    session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
+    session = serializer.dumps(
+        {"uid": str(user.id), "org": str(organization.id), "sv": user.session_version}
+    )
     cookies = f"{COOKIE_AUTH}={session}; {COOKIE_CSRF}={csrf_serializer.dumps(token)}"
     headers = {"cookie": cookies, "x-csrf-token": token}
     client = RobynTestClient(app)
@@ -535,7 +539,9 @@ async def test_contact_crud_roles_isolation_and_reactivation() -> None:
     assert membership is not None
     organization = await membership.organization
     token = "csrf-contact-integration"
-    session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
+    session = serializer.dumps(
+        {"uid": str(user.id), "org": str(organization.id), "sv": user.session_version}
+    )
     headers = {
         "cookie": f"{COOKIE_AUTH}={session}; {COOKIE_CSRF}={csrf_serializer.dumps(token)}",
         "Content-Type": "application/x-www-form-urlencoded",
@@ -629,7 +635,9 @@ async def test_cep_lookup_route_requires_a_session_and_returns_address(monkeypat
     membership = await Membership.filter(user=user).first()
     assert membership is not None
     organization = await membership.organization
-    session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
+    session = serializer.dumps(
+        {"uid": str(user.id), "org": str(organization.id), "sv": user.session_version}
+    )
     headers = {"cookie": f"{COOKIE_AUTH}={session}"}
 
     async def fake_lookup(value: str) -> dict[str, str]:
@@ -703,7 +711,9 @@ async def test_payables_and_receivables_pages_filter_titles_by_type_and_status()
         installment_count=1,
     )
     csrf_token = "csrf-title-register-test"
-    session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
+    session = serializer.dumps(
+        {"uid": str(user.id), "org": str(organization.id), "sv": user.session_version}
+    )
     headers = {
         "cookie": f"{COOKIE_AUTH}={session}; {COOKIE_CSRF}={csrf_serializer.dumps(csrf_token)}",
         "Content-Type": "application/x-www-form-urlencoded",

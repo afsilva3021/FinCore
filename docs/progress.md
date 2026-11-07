@@ -125,7 +125,7 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Baixa e cancelamento de título exibem o motivo real da recusa na página do tipo correto.
 - [x] Cadastro exige confirmação de senha e aplica política de força no servidor (com retorno imediato no navegador); campos preenchidos são preservados após erro, exceto as senhas.
 - [x] Ruff e suíte completa (74 testes, com PostgreSQL de teste) aprovados.
-- [ ] Pendências levantadas na revisão: segredo `AUTH_SECRET` obrigatório fora do ambiente local, limite de tentativas de login, revogação de sessão no logout, headers de segurança, checagem de perfil (`Membership.role`), N+1 em saldos contábeis/diário e `CHECK` constraints no banco.
+- [ ] Pendências levantadas na revisão: checagem de perfil (`Membership.role`), N+1 em saldos contábeis/diário e `CHECK` constraints no banco. (Segredo obrigatório, limite de login, revogação de sessão e headers: concluídos em 2026-11-06.)
 >>>>>>> 552a8c89c4c1ea56746cb0baacda645697a96af0
 
 ## Aplicação separada do banco (2026-11-06)
@@ -138,3 +138,10 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Aplicação recusa iniciar exposta com `AUTH_SECRET` padrão/curto (testes unitários).
 - [ ] Pendente de validação: `docker compose up --build` real (o ambiente da implementação não alcança os registries de imagem).
 - [ ] Produção: proxy HTTPS, `SECURE_COOKIES=true`, cofre de segredos e backup — checklist no README.
+
+## Segurança de autenticação (2026-11-06)
+
+- [x] Bloqueio de login por e-mail (5 falhas) e por IP (20 falhas) em janela de 15 min, com upsert e `SELECT ... FOR UPDATE` contra corrida; `429` na página de login.
+- [x] Verificação contra hash fictício para e-mail inexistente (sem enumeração por tempo).
+- [x] `session_version` no usuário; logout revoga todos os tokens. Migration `0016` testada em banco com usuários existentes (coluna criada anulável, preenchida e então `NOT NULL`).
+- [x] Headers de segurança globais; script inline do tema movido para `static/js/theme.js`. 11 páginas abertas no Chromium sem violações de CSP.

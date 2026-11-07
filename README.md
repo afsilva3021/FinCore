@@ -10,7 +10,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0015`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- Migrations versionadas até `0016`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
@@ -22,6 +22,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-06 | Segurança de login: bloqueio de 15 min após 5 falhas por e-mail ou 20 por IP, tempo de resposta igual para e-mail inexistente, logout que revoga a sessão em todos os dispositivos e headers de segurança (CSP sem `unsafe-inline`, `X-Frame-Options`, `nosniff`, HSTS com HTTPS). Migration `0016`. |
 | 2026-11-06 | Aplicação em container próprio, separado do banco: Dockerfile sem root, banco só em rede interna, usuário de banco restrito (sem DDL) para o app, migrations automáticas e bloqueio de `AUTH_SECRET` padrão fora do ambiente local. |
 | 2026-11-06 | Ícones de mostrar/ocultar senha também no cadastro; senhas dos testes de integração ajustadas à política de senha. |
 | 2026-11-05 | Contatos (clientes/fornecedores) com CPF/CNPJ, endereço via CEP, inativação; dados bancários nas contas financeiras (migrations `0014` e `0015`). |
@@ -51,6 +52,9 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 - Cadastro de usuário e organização, login e logout.
 - Hash Argon2id, sessão assinada (12 h), cookies HttpOnly/SameSite e CSRF com a mesma duração da sessão, renovado no login/cadastro.
+- Login com bloqueio temporário: 5 falhas para o mesmo e-mail ou 20 para o mesmo IP em 15 minutos bloqueiam novas tentativas por 15 minutos (resposta `429`). O bloqueio vale também para e-mails inexistentes e a senha é sempre verificada contra um hash, então a resposta não revela quais contas existem. Atrás de proxy, configure `TRUSTED_PROXIES` para o IP real do cliente ser usado.
+- Logout revoga a sessão: o token carrega uma versão (`session_version`) que é incrementada no logout, invalidando cookies copiados em qualquer dispositivo.
+- Headers de segurança em todas as respostas da aplicação: CSP sem scripts inline, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` e, com `SECURE_COOKIES=true`, HSTS. Arquivos de `/static` são servidos direto pelo Robyn sem esses headers; em produção, o proxy reverso deve aplicá-los a tudo.
 - Cadastro exige confirmação de senha e senha de 12 a 128 caracteres com pelo menos 3 tipos (minúscula, maiúscula, número, símbolo), sem conter o nome ou o início do e-mail. A regra fica no servidor (`application/identity.py`); a página apenas a espelha para retorno imediato.
 - Isolamento de contas, categorias, movimentações, títulos, conciliações e relatórios por organização.
 - Cadastro próprio de clientes e fornecedores em `/customers` e `/suppliers`, com CPF/CNPJ, endereço, contato, inativação e reativação.
@@ -225,7 +229,8 @@ docker compose run --rm app fincore-backfill-accounting
 | `APP_BIND` / `APP_PUBLISHED_PORT` | `127.0.0.1` / `8080` | Onde o Compose publica a aplicação no host |
 | `DATABASE_URL` | ausente | Se definida, substitui os campos PostgreSQL |
 | `AUTH_SECRET` | chave de desenvolvimento | Assinatura de sessão; obrigatório trocar (32+ caracteres) quando a aplicação escuta fora de `127.0.0.1` |
-| `SECURE_COOKIES` | `false` | Ativar `true` atrás de HTTPS |
+| `SECURE_COOKIES` | `false` | Ativar `true` atrás de HTTPS (também liga o HSTS) |
+| `TRUSTED_PROXIES` | vazio | IPs de proxies reversos confiáveis, separados por vírgula; só deles o `X-Forwarded-For` é aceito para o limite de login por IP |
 
 O Compose de teste tem credenciais fixas exclusivamente locais em `compose.yaml`, porta 5434 e volume `pgtestdata`. Nunca reutilize esses valores em produção.
 
@@ -238,7 +243,7 @@ O Compose já separa aplicação e banco e usa padrões seguros, mas produção 
 - [ ] Segredos fortes e únicos para `POSTGRES_PASSWORD`, `APP_DB_PASSWORD` e `AUTH_SECRET`, guardados num cofre de segredos (não em arquivo versionado). Trocar o `AUTH_SECRET` derruba todas as sessões ativas.
 - [ ] Backup automatizado e testado do volume/banco (`pg_dump` agendado ou backup do serviço gerenciado) antes de qualquer migration.
 - [ ] Se usar banco gerenciado (RDS, Cloud SQL etc.), remova o serviço `db` e aponte `POSTGRES_HOST` para ele; mantenha os dois usuários (dono para migrations, restrito para o app) e exija TLS na conexão.
-- [ ] Pendências de segurança da aplicação listadas em [docs/progress.md](docs/progress.md): limite de tentativas de login, revogação de sessão no logout, headers de segurança (CSP etc.) e checagem de perfil (`Membership.role`).
+- [ ] Pendências de segurança da aplicação listadas em [docs/progress.md](docs/progress.md): checagem de perfil (`Membership.role`). Configure `TRUSTED_PROXIES` com o IP do proxy reverso.
 
 ### Banco de teste e testes
 

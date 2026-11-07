@@ -58,7 +58,9 @@ async def _receivable_setup():
         payment_terms="cash",
         installment_count=1,
     )
-    session = serializer.dumps({"uid": str(user.id), "org": str(organization.id)})
+    session = serializer.dumps(
+        {"uid": str(user.id), "org": str(organization.id), "sv": user.session_version}
+    )
     token = uuid4().hex
     cookie = f"{COOKIE_AUTH}={session}; {COOKIE_CSRF}={csrf_serializer.dumps(token)}"
     return organization, user, account, title, {"cookie": cookie, "content-type": FORM}, token

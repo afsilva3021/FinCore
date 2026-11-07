@@ -49,7 +49,12 @@ from fincore.application.finance import (
     settle_movement,
     update_account,
 )
-from fincore.application.identity import PASSWORD_RULES_TEXT, authenticate, register_user
+from fincore.application.identity import (
+    PASSWORD_RULES_TEXT,
+    login_with_throttle,
+    register_user,
+    revoke_sessions,
+)
 from fincore.application.money import parse_api_amount
 from fincore.application.reconciliation import (
     import_ofx,
@@ -157,6 +162,24 @@ def _valid_csrf(request: Request, submitted: str) -> bool:
     return secrets.compare_digest(str(cookie_token).encode(), submitted.encode())
 
 
+def _session_token(user: User, membership: Membership) -> str:
+    return serializer.dumps(
+        {"uid": str(user.id), "org": str(membership.organization_id), "sv": user.session_version}
+    )
+
+
+def _client_ip(request: Request) -> str | None:
+    """IP do cliente; o X-Forwarded-For só é aceito quando vem de um proxy confiável."""
+    peer = request.ip_addr
+    if peer and peer in settings.trusted_proxies:
+        forwarded = request.headers.get("x-forwarded-for") or ""
+        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+        for hop in reversed(hops):
+            if hop not in settings.trusted_proxies:
+                return hop
+    return peer
+
+
 async def _current_user(request: Request) -> tuple[User, Membership] | None:
     token = _cookie_value(request, COOKIE_AUTH)
     if not token:
@@ -166,7 +189,7 @@ async def _current_user(request: Request) -> tuple[User, Membership] | None:
     except BadSignature, SignatureExpired:
         return None
     user = await User.get_or_none(id=payload.get("uid"), is_active=True)
-    if user is None:
+    if user is None or payload.get("sv") != user.session_version:
         return None
     membership = await Membership.filter(
         user=user, organization_id=payload.get("org"), is_active=True, organization__is_active=True
@@ -239,20 +262,25 @@ def register_web_routes(app: object) -> None:
                 ),
                 400,
             )
-        result = await authenticate(form.get("email", "").strip(), form.get("password", ""))
-        if result is None:
+        result = await login_with_throttle(
+            form.get("email", ""), form.get("password", ""), _client_ip(request)
+        )
+        if result.session is None:
+            if result.locked_minutes:
+                message = (
+                    "Muitas tentativas de login. Tente novamente em "
+                    f"{result.locked_minutes} minuto(s)."
+                )
+                status = 429
+            else:
+                message, status = "E-mail ou senha inválidos.", 401
             response = _response(
-                _page(
-                    "auth/login.html",
-                    csrf=expected_csrf,
-                    error="E-mail ou senha inválidos.",
-                ),
-                401,
+                _page("auth/login.html", csrf=expected_csrf, error=message), status
             )
             _set_cookie(response, COOKIE_CSRF, csrf_cookie, CSRF_TTL_SECONDS)
             return response
-        user, membership = result
-        token = serializer.dumps({"uid": str(user.id), "org": str(membership.organization_id)})
+        user, membership = result.session
+        token = _session_token(user, membership)
         response = _redirect("/dashboard")
         _set_cookie(response, COOKIE_AUTH, token, SESSION_TTL_SECONDS)
         _csrf_cookie(response, secrets.token_urlsafe(24))
@@ -326,7 +354,7 @@ def register_web_routes(app: object) -> None:
             return register_error("Este e-mail já está cadastrado.", 409)
         membership = await Membership.filter(user=user, is_active=True).first()
         response = _redirect("/dashboard")
-        session = serializer.dumps({"uid": str(user.id), "org": str(membership.organization_id)})
+        session = _session_token(user, membership)
         _set_cookie(response, COOKIE_AUTH, session, SESSION_TTL_SECONDS)
         _csrf_cookie(response, secrets.token_urlsafe(24))
         return response
@@ -336,6 +364,9 @@ def register_web_routes(app: object) -> None:
         form = _form_data(request)
         if not _valid_csrf(request, form.get("csrf", "")):
             return _redirect("/login")
+        current = await _current_user(request)
+        if current is not None:
+            await revoke_sessions(current[0])
         response = _redirect("/login")
         _set_cookie(response, COOKIE_AUTH, "", 0)
         return response

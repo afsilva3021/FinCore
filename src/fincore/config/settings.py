@@ -32,6 +32,10 @@ class Settings:
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     database_url: str = _database_url()
     auth_secret: str = os.getenv("AUTH_SECRET", DEFAULT_AUTH_SECRET)
+    # IPs de proxies reversos confiáveis; só deles o X-Forwarded-For é aceito.
+    trusted_proxies: frozenset[str] = frozenset(
+        item.strip() for item in os.getenv("TRUSTED_PROXIES", "").split(",") if item.strip()
+    )
     secure_cookies: bool = os.getenv("SECURE_COOKIES", "false").lower() == "true"
 
 

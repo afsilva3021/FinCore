@@ -4,10 +4,10 @@ As páginas HTML são a interface principal do FinCore. Os formulários fazem va
 
 ## Páginas
 
-- `GET /login`, `POST /login` — autenticação por e-mail e senha.
+- `GET /login`, `POST /login` — autenticação por e-mail e senha. `401` para credenciais inválidas; `429` quando o e-mail (5 falhas) ou o IP (20 falhas) atingiu o limite em 15 minutos, por 15 minutos.
 - `GET /register`, `POST /register` — criação da organização e usuário proprietário. Exige `password_confirm` igual a `password` e senha de 12 a 128 caracteres com pelo menos 3 tipos (minúscula, maiúscula, número, símbolo), sem conter o nome ou o início do e-mail. A regra fica em `fincore.application.identity.password_problems`; o JavaScript da página só a espelha para retorno imediato.
 - `GET /dashboard` — página inicial autenticada.
-- `POST /logout` — encerra a sessão no navegador.
+- `POST /logout` — encerra a sessão e revoga todos os tokens de sessão do usuário (incrementa `session_version`).
 - `GET /accounts`, `POST /accounts` — contas financeiras e saldos derivados.
 - `GET /categories`, `POST /categories` — categorias de receita/despesa, grupos sintéticos e subcategorias analíticas.
 - `GET /transactions`, `POST /transactions` — receitas, despesas e transferências.
