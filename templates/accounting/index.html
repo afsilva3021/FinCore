@@ -59,6 +59,7 @@
       </details>
       {% endfor %}
     </div>
+    {% include "partials/pagination.html" %}
     {% else %}<div class="finance-empty"><span>≡</span><strong>Nenhum lançamento contábil</strong><small>Crie um lançamento balanceado para iniciar o diário.</small></div>{% endif %}
   </article>
 </section>

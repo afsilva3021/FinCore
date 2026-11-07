@@ -53,6 +53,8 @@ async def list_counterparties(
     *,
     role: str = "all",
     status: str = "all",
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[Counterparty]:
     query = Counterparty.filter(organization=organization)
     if role == "customer":
@@ -63,7 +65,10 @@ async def list_counterparties(
         query = query.filter(is_active=True)
     elif status == "inactive":
         query = query.filter(is_active=False)
-    return await query.order_by("name", "party_type")
+    query = query.order_by("name", "party_type").offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    return await query
 
 
 async def get_counterparty(

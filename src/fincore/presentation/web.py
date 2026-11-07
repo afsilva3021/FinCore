@@ -4,6 +4,7 @@ import csv
 import json
 import secrets
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from http.cookies import SimpleCookie
@@ -247,6 +248,38 @@ async def _current_user(request: Request) -> tuple[User, Membership] | None:
         return None
     _current_role.set(membership.role)
     return user, membership
+
+
+PAGE_SIZE = 50
+MAX_PAGE = 10_000
+
+
+@dataclass(frozen=True, slots=True)
+class PageInfo:
+    number: int
+    has_previous: bool
+    has_next: bool
+    params: dict[str, str]
+
+    def url(self, number: int) -> str:
+        return "?" + urlencode({**self.params, "page": number})
+
+
+def _page_number(request: Request) -> int:
+    try:
+        number = int(request.query_params.get("page", "1") or "1")
+    except ValueError:
+        return 1
+    return min(max(number, 1), MAX_PAGE)
+
+
+async def _paginate(query, request: Request, *, keep: tuple[str, ...] = (), size: int = PAGE_SIZE):
+    """Busca uma página (size + 1 linhas para saber se há próxima) e os links de navegação."""
+    number = _page_number(request)
+    rows = list(await query.offset((number - 1) * size).limit(size + 1))
+    params = {key: value for key in keep if (value := request.query_params.get(key, ""))}
+    info = PageInfo(number, number > 1, len(rows) > size, params)
+    return rows[:size], info
 
 
 def _form_data(request: Request) -> dict[str, str]:
@@ -533,12 +566,26 @@ async def _render_counterparties(
             "is_customer": "true" if role == "customer" else "",
             "is_supplier": "true" if role == "supplier" else "",
         }
+    number = _page_number(request)
+    rows = await list_counterparties(
+        organization,
+        role=role,
+        status=status,
+        limit=PAGE_SIZE + 1,
+        offset=(number - 1) * PAGE_SIZE,
+    )
+    contacts = rows[:PAGE_SIZE]
+    params = {
+        key: value for key in ("role", "status") if (value := request.query_params.get(key, ""))
+    }
+    pagination = PageInfo(number, number > 1, len(rows) > PAGE_SIZE, params)
     return _page(
         "finance/contacts.html",
         name=user.full_name,
         organization=organization,
         csrf=_csrf_from_auth(request),
-        contacts=await list_counterparties(organization, role=role, status=status),
+        contacts=contacts,
+        pagination=pagination,
         role=role,
         status=status,
         form=form,
@@ -565,11 +612,11 @@ async def _render_transactions(
     form: dict[str, str] | None = None,
     default_type: str = "income",
 ) -> str:
-    transactions = (
-        await FinancialTransaction.filter(organization=organization)
+    transactions, pagination = await _paginate(
+        FinancialTransaction.filter(organization=organization)
         .select_related("account", "category")
-        .order_by("-competence_date", "-created_at")
-        .limit(100)
+        .order_by("-competence_date", "-created_at"),
+        request,
     )
     return _page(
         "finance/transactions.html",
@@ -587,6 +634,7 @@ async def _render_transactions(
         .select_related("parent")
         .order_by("name"),
         transactions=transactions,
+        pagination=pagination,
         reversal_keys={str(item.id): str(uuid4()) for item in transactions},
         error=error,
         form=form or {"transaction_type": default_type},
@@ -636,10 +684,12 @@ async def _render_title_register(
         base_query = base_query.filter(status__in=["open", "partial"], due_date__lt=today)
     elif status == "cancelled":
         base_query = base_query.filter(status="cancelled")
-    titles = (
-        await base_query.select_related("account", "category", "counterparty")
-        .order_by("due_date", "-created_at")
-        .limit(200)
+    titles, pagination = await _paginate(
+        base_query.select_related("account", "category", "counterparty").order_by(
+            "due_date", "-created_at"
+        ),
+        request,
+        keep=("status",),
     )
     is_payable = title_type == "payable"
     all_titles = await FinancialTitle.filter(
@@ -690,6 +740,7 @@ async def _render_title_register(
             ("other", "Outro"),
         ],
         titles=titles,
+        pagination=pagination,
         title_states={
             str(item.id): "overdue"
             if item.due_date < today and item.status in {"open", "partial"}
@@ -1212,14 +1263,19 @@ async def _render_accounting(
     error: str | None = None,
     open_drawer: str | None = None,
 ) -> str:
-    entries = (
-        await JournalEntry.filter(organization=organization)
-        .order_by("-entry_date", "-created_at")
-        .limit(100)
+    entries, pagination = await _paginate(
+        JournalEntry.filter(organization=organization).order_by("-entry_date", "-created_at"),
+        request,
     )
+    # Todas as linhas dos lançamentos exibidos numa só query (antes: uma por lançamento).
+    lines_by_entry: dict[UUID, list[JournalEntryLine]] = {}
+    for line in await JournalEntryLine.filter(
+        journal_entry_id__in=[entry.id for entry in entries]
+    ).select_related("account"):
+        lines_by_entry.setdefault(line.journal_entry_id, []).append(line)
     entry_rows = []
     for entry in entries:
-        lines = await JournalEntryLine.filter(journal_entry=entry).select_related("account").all()
+        lines = lines_by_entry.get(entry.id, [])
         debit = sum((line.debit for line in lines), Decimal("0.00"))
         credit = sum((line.credit for line in lines), Decimal("0.00"))
         entry_rows.append((entry, lines, debit, credit))
@@ -1244,6 +1300,7 @@ async def _render_accounting(
             (account, balance) for account, balance in accounts if account.is_synthetic
         ],
         entries=entry_rows,
+        pagination=pagination,
         reversed_ids=reversals,
         error=error,
         open_drawer=open_drawer,
@@ -1414,15 +1471,22 @@ def register_reconciliation_routes(app: object) -> None:
         error: str | None = None,
         form: dict[str, str] | None = None,
     ) -> str:
-        imported = (
-            await ImportedStatementTransaction.filter(organization=organization)
+        imported, pagination = await _paginate(
+            ImportedStatementTransaction.filter(organization=organization)
             .select_related("account")
-            .order_by("-posted_at", "-imported_at")
-            .limit(200)
+            .order_by("-posted_at", "-imported_at"),
+            request,
         )
+        # Vínculos da página numa só query (antes: uma por linha do extrato).
+        matches = {
+            match.statement_transaction_id: match
+            for match in await ReconciliationMatch.filter(
+                statement_transaction_id__in=[item.id for item in imported]
+            )
+        }
         rows = []
         for item in imported:
-            match = await ReconciliationMatch.filter(statement_transaction=item).first()
+            match = matches.get(item.id)
             candidates = (
                 await FinancialTransaction.filter(
                     organization=organization,
@@ -1443,6 +1507,7 @@ def register_reconciliation_routes(app: object) -> None:
                 organization=organization, is_active=True
             ).order_by("name"),
             rows=rows,
+            pagination=pagination,
             message=message,
             error=error,
             form=form or {},

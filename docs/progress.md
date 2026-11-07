@@ -125,7 +125,7 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Baixa e cancelamento de título exibem o motivo real da recusa na página do tipo correto.
 - [x] Cadastro exige confirmação de senha e aplica política de força no servidor (com retorno imediato no navegador); campos preenchidos são preservados após erro, exceto as senhas.
 - [x] Ruff e suíte completa (74 testes, com PostgreSQL de teste) aprovados.
-- [ ] Pendências levantadas na revisão: N+1 em saldos contábeis/diário e `CHECK` constraints no banco. (Segredo obrigatório, limite de login, revogação de sessão e headers: concluídos em 2026-11-06.)
+- [x] Pendências da revisão concluídas em 2026-11-06 (segredo obrigatório, limite de login, revogação de sessão, headers, perfis, N+1 e `CHECK` constraints).
 >>>>>>> 552a8c89c4c1ea56746cb0baacda645697a96af0
 
 ## Aplicação separada do banco (2026-11-06)
@@ -153,3 +153,10 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Layout mostra o perfil real (antes, "Administrador" fixo) e aviso de somente leitura.
 - [x] CI: job `docker` constrói a imagem, sobe o Compose com `--wait`, confere `/health`, `migrate` com código 0, banco sem porta no host e container sem root; job `quality` repete a suíte com o usuário restrito do banco.
 - [ ] O job `docker` roda pela primeira vez no GitHub Actions (não foi possível construir a imagem no ambiente da implementação).
+
+## Integridade, desempenho e isolamento (2026-11-06)
+
+- [x] Migration `0017`: 17 `CHECK` constraints; validadas contra o banco de teste existente (todas `convalidated = true`) e testadas num banco antigo com linha inválida (migration conclui, constraint fica `NOT VALID` e bloqueia gravações novas).
+- [x] `get_ledger_balances`, `get_account_balances`, diário contábil e conciliação sem N+1 (uma agregação/consulta por tela).
+- [x] Paginação de 50 itens com `?page=N` em transações, títulos, contatos, diário e conciliação.
+- [x] Teste de isolamento: organização B tenta 18 rotas com IDs da organização A (HTML e API); nada vaza nem muda. Execução de controle com o dono de A confirma que as mesmas requisições alteram dados.

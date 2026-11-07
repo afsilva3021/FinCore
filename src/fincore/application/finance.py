@@ -6,6 +6,7 @@ from decimal import Decimal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from tortoise.exceptions import IntegrityError
+from tortoise.functions import Sum
 from tortoise.transactions import in_transaction
 
 from fincore.application.money import parse_brl
@@ -659,16 +660,18 @@ async def get_account_balances(
     if not include_inactive:
         query = query.filter(is_active=True)
     accounts = await query.all()
-    movements = await FinancialTransaction.filter(organization=organization, status="settled").all()
+    # Soma no banco por conta e tipo (antes: todas as movimentações em memória).
+    rows = (
+        await FinancialTransaction.filter(organization=organization, status="settled")
+        .annotate(total=Sum("amount"))
+        .group_by("account_id", "transaction_type")
+        .values("account_id", "transaction_type", "total")
+    )
     changes: dict[UUID, Decimal] = {}
-    for movement in movements:
-        sign = (
-            Decimal("-1")
-            if movement.transaction_type in {"expense", "transfer_out"}
-            else Decimal("1")
-        )
-        changes[movement.account_id] = (
-            changes.get(movement.account_id, Decimal("0")) + sign * movement.amount
+    for row in rows:
+        sign = Decimal("-1") if row["transaction_type"] in {"expense", "transfer_out"} else 1
+        changes[row["account_id"]] = changes.get(row["account_id"], Decimal("0")) + sign * Decimal(
+            row["total"]
         )
     return [
         (account, account.opening_balance + changes.get(account.id, Decimal("0")))

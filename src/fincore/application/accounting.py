@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from tortoise.exceptions import IntegrityError
+from tortoise.functions import Sum
 from tortoise.transactions import in_transaction
 
 from fincore.application.money import parse_brl
@@ -257,14 +258,18 @@ async def get_ledger_balances(
     account_rows: list[tuple[LedgerAccount, Decimal]] = []
     direct_balances: dict[UUID, Decimal] = {}
     children: dict[UUID, list[LedgerAccount]] = {}
+    # Uma única agregação no banco para todas as contas (antes: uma query por conta).
+    sums = {
+        row["account_id"]: (row["debit"] or Decimal("0.00"), row["credit"] or Decimal("0.00"))
+        for row in await JournalEntryLine.filter(
+            journal_entry__organization=organization, journal_entry__status="posted"
+        )
+        .annotate(debit=Sum("debit"), credit=Sum("credit"))
+        .group_by("account_id")
+        .values("account_id", "debit", "credit")
+    }
     for account in accounts:
-        lines = await JournalEntryLine.filter(
-            account=account,
-            journal_entry__organization=organization,
-            journal_entry__status="posted",
-        ).all()
-        debit = sum((line.debit for line in lines), Decimal("0.00"))
-        credit = sum((line.credit for line in lines), Decimal("0.00"))
+        debit, credit = sums.get(account.id, (Decimal("0.00"), Decimal("0.00")))
         balance = debit - credit if account.account_type in {"asset", "expense"} else credit - debit
         direct_balances[account.id] = balance
         if account.parent_id:
