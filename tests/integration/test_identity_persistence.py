@@ -650,7 +650,7 @@ async def test_cep_lookup_route_requires_a_session_and_returns_address(monkeypat
             "state": "SP",
         }
 
-    monkeypatch.setattr("fincore.presentation.web.lookup_cep", fake_lookup)
+    monkeypatch.setattr("fincore.presentation.routes.contacts.lookup_cep", fake_lookup)
     client = RobynTestClient(app)
     response = await asyncio.to_thread(
         client.get, "/contacts/postal-code", headers=headers, query_params={"cep": "01001000"}

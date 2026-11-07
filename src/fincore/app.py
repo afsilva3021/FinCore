@@ -10,9 +10,7 @@ from tortoise import Tortoise
 from fincore.config.database import TORTOISE_ORM
 from fincore.config.settings import settings, startup_problems
 from fincore.presentation.health import database_is_ready
-from fincore.presentation.security_headers import apply_security_headers
-from fincore.presentation.web import (
-    enforce_write_permission,
+from fincore.presentation.routes import (
     register_accounting_routes,
     register_api_routes,
     register_counterparty_routes,
@@ -23,6 +21,8 @@ from fincore.presentation.web import (
     register_report_routes,
     register_web_routes,
 )
+from fincore.presentation.security_headers import apply_security_headers
+from fincore.presentation.web import enforce_write_permission
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),

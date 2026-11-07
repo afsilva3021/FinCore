@@ -160,3 +160,12 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] `get_ledger_balances`, `get_account_balances`, diário contábil e conciliação sem N+1 (uma agregação/consulta por tela).
 - [x] Paginação de 50 itens com `?page=N` em transações, títulos, contatos, diário e conciliação.
 - [x] Teste de isolamento: organização B tenta 18 rotas com IDs da organização A (HTML e API); nada vaza nem muda. Execução de controle com o dono de A confirma que as mesmas requisições alteram dados.
+
+## Arquitetura (2026-11-06)
+
+- [x] `domain/` com regras puras (dinheiro, títulos, partidas dobradas) e 14 testes unitários sem banco.
+- [x] `presentation/routes/` com um módulo por área; `web.py` ficou com sessão, CSRF, templates e paginação (683 linhas).
+- [x] `login_required` e `api_login_required` substituem os blocos de verificação de sessão repetidos.
+- [x] Nenhuma consulta ORM direta nas rotas: leitura em `application/queries.py`; conciliação sem N+1 de candidatos.
+- [x] `tests/unit/test_architecture.py`: domínio sem framework/ORM e apresentação sem consulta ORM direta.
+- [x] Servidor real iniciado e 12 telas navegadas no Chromium após a refatoração.

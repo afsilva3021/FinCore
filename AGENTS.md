@@ -57,6 +57,7 @@ FinCore/
 Esta árvore é uma referência de responsabilidades; confira a estrutura real do repositório antes de criar arquivos. O entrypoint existente fica em `src/fincore/app.py`, não em `app.py` na raiz.
 
 - Rotas HTTP não devem conter regras contábeis ou SQL direto.
+- Rotas ficam em `src/fincore/presentation/routes/<área>.py` e usam `@login_required`/`@api_login_required`; leituras vêm de `application/queries.py`. Regras puras ficam em `domain/`. `tests/unit/test_architecture.py` falha se a apresentação consultar o ORM ou se o domínio importar framework/ORM.
 - Casos de uso coordenam validações, autorização, persistência e chamadas externas.
 - Entidades e políticas de domínio não devem depender do framework web.
 - Camada de infraestrutura encapsula detalhes do Tortoise ORM e integrações bancárias.

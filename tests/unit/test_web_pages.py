@@ -73,7 +73,7 @@ def test_versioned_api_exposes_health_and_requires_session_for_business_data(
     async def database_ready() -> bool:
         return True
 
-    monkeypatch.setattr("fincore.presentation.web.database_is_ready", database_ready)
+    monkeypatch.setattr("fincore.presentation.routes.api.database_is_ready", database_ready)
     client = RobynTestClient(app)
 
     health = client.get("/api/v1/health")

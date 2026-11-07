@@ -22,6 +22,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-06 | Arquitetura: `web.py` (2.600 linhas) dividido em `presentation/routes/` por área; decorators `login_required`/`api_login_required` no lugar de 43 blocos repetidos; todas as consultas das rotas movidas para `application/queries.py` (inclusive o N+1 restante da conciliação); testes de arquitetura. |
 | 2026-11-06 | Camada `domain/` com as regras financeiras puras (parcelas, baixas, estados de título, partidas dobradas), testadas sem banco; arredondamento contábil padronizado em meio para cima. |
 | 2026-11-06 | Integridade e desempenho: 17 `CHECK` constraints no banco (migration `0017`), saldos contábeis e financeiros agregados no banco (fim dos N+1), paginação de 50 itens nas listas (antes havia um corte silencioso em 100/200) e teste de isolamento entre organizações em todas as rotas com ID. |
 | 2026-11-06 | Perfis de acesso (Proprietário, Financeiro, Somente leitura) com página `/members`; bloqueio central de escrita para quem é somente leitura. CI passa a construir a imagem Docker, subir o Compose e rodar os testes com o usuário restrito do banco. |
@@ -47,7 +48,20 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 | Execução | Docker Compose com containers separados para aplicação, migrations e banco; `uv run fincore` para desenvolvimento |
 | Qualidade | pytest, httpx, Ruff |
 
-É um monólito modular, com apresentação, aplicação, domínio e infraestrutura separados por responsabilidade. O arquivo de inicialização é `src/fincore/app.py`; não existe `app.py` na raiz. A aplicação web usa sessão assinada e cookies; formulários de alteração validam CSRF. Senhas são protegidas com Argon2id. Consultas financeiras são limitadas à organização da sessão.
+É um **monólito modular em camadas**, com casos de uso no estilo *Transaction Script* e persistência *Active Record* via Tortoise ORM. As dependências seguem uma direção só:
+
+```text
+presentation/routes  →  application (casos de uso + queries)  →  domain (regras puras)
+                                     ↓
+                              infrastructure (models Tortoise, migrations, ViaCEP)
+```
+
+- **`domain/`** guarda as regras financeiras puras (dinheiro, parcelas, baixas, estados de título, partidas dobradas) e não importa Robyn, Tortoise nem outras camadas, então é testado em milissegundos sem banco.
+- **`application/`** busca os dados, aplica as regras do domínio dentro de transações e grava; `application/queries.py` concentra as leituras usadas pelas telas.
+- **`presentation/`** só traduz HTTP: lê formulários/JSON, chama a aplicação e renderiza. Rotas não consultam o ORM diretamente.
+- `tests/unit/test_architecture.py` verifica essas duas regras no código-fonte e falha se alguém as quebrar.
+
+Por que não Clean Architecture completa: com um ORM Active Record, separar entidades de domínio dos models exigiria duplicar cada entidade e um mapeador entre elas. A escolha foi isolar o que mais ganha com isso — as regras financeiras — e manter o resto simples. O arquivo de inicialização é `src/fincore/app.py`; não existe `app.py` na raiz. A aplicação web usa sessão assinada e cookies; formulários de alteração validam CSRF. Senhas são protegidas com Argon2id. Consultas financeiras são limitadas à organização da sessão.
 
 ## Funcionalidades presentes
 
@@ -298,7 +312,9 @@ src/fincore/
   config/                        variáveis de ambiente e conexão ORM
   infrastructure/                 modelos Tortoise e migrations versionadas
   infrastructure/db_roles.py     usuário restrito do banco usado pelo container app
-  presentation/                   health e rotas server-rendered/API
+  application/queries.py         consultas de leitura usadas pelas telas e pela API
+  presentation/web.py            sessão, CSRF, templates, paginação e decorators de login
+  presentation/routes/           rotas HTTP, um arquivo por área (finance, accounting, api...)
 templates/                        templates Jinja/Bootstrap por módulo
 static/css/                       tema claro/escuro e estilos de interface
 static/js/                        drawer, confirmações modais e interações
@@ -306,7 +322,7 @@ Dockerfile                        imagem da aplicação (sem root, só leitura)
 compose.yaml                      app, migrate, db (rede interna) e db-test
 compose.dev.yaml                  só dev: publica o banco em 127.0.0.1:5433
 docs/                             requisitos, contratos, contabilidade e decisões
-tests/unit/                       regras isoladas
+tests/unit/                       regras de domínio sem banco e testes de arquitetura
 tests/integration/                persistência PostgreSQL e fluxos HTTP
 ```
 
