@@ -10,7 +10,7 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css" rel="stylesheet">
   <link href="/static/css/app.css" rel="stylesheet">
 </head>
-<body class="app-body {% block body_class %}{% endblock %}">
+<body class="app-body {% block body_class %}{% endblock %}{% if current_role() and not can_write() %} is-readonly{% endif %}">
   {% block content %}{% endblock %}
   <div class="modal fade fincore-confirm-modal" id="fincoreConfirmModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="fincoreConfirmTitle" aria-describedby="fincoreConfirmMessage" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

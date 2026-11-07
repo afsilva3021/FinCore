@@ -60,6 +60,7 @@ async def test_viewer_can_read_but_every_write_is_refused() -> None:
     page = await asyncio.to_thread(client.get, "/accounts", headers=headers)
     assert page.status_code == 200
     assert "Perfil somente leitura" in page.text
+    assert "is-readonly" in page.text
 
     body = f"csrf={token}&name=Bloqueada&account_type=cash&opening_balance=0"
     html = await asyncio.to_thread(client.post, "/accounts", headers=headers, body=body)

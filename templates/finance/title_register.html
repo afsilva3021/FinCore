@@ -54,7 +54,7 @@
     {% endfor %}
   </tbody></table></div>
 {% include "partials/pagination.html" %}
-  <div class="title-grid-footer">Exibindo até 200 títulos · Valores em BRL</div>
+  <div class="title-grid-footer">50 títulos por página · Valores em BRL</div>
   {% else %}
   <div class="finance-empty title-empty"><span>{{ '↘' if is_payable else '↗' }}</span><strong>Nenhum título encontrado</strong><small>{% if search or due_from or due_to %}Ajuste os filtros ou limpe a busca para consultar outros títulos.{% else %}Cadastre um título nesta página; ele não será lançado no extrato até haver uma baixa.{% endif %}</small></div>
   {% endif %}

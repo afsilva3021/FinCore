@@ -495,3 +495,48 @@ document.querySelectorAll('[data-branch-mask]').forEach((input) => {
     input.value = digits.length > 4 ? `${digits.slice(0, 4)}-${digits.slice(4)}` : digits;
   });
 });
+
+
+// Sugestão de categoria: aprende com os lançamentos já categorizados da organização
+// (GET /api/v1/categories/suggestion). Só preenche quando a pessoa ainda não escolheu.
+(() => {
+  const select = document.querySelector('[data-category-suggest]');
+  const description = document.getElementById('movement-description');
+  const type = document.getElementById('movement-type');
+  const hint = document.querySelector('[data-category-hint]');
+  if (!select || !description || !type || !hint) return;
+  let suggestedValue = null;
+  let timer = null;
+  let request = 0;
+
+  const clearHint = () => { hint.hidden = true; hint.textContent = ''; };
+
+  const askSuggestion = async () => {
+    const text = description.value.trim();
+    if (text.length < 3 || (select.value && select.value !== suggestedValue)) return;
+    const current = ++request;
+    try {
+      const params = new URLSearchParams({ description: text, type: type.value });
+      const response = await fetch(`/api/v1/categories/suggestion?${params}`, { credentials: 'same-origin' });
+      if (!response.ok || current !== request) return;
+      const { suggestion } = await response.json();
+      if (!suggestion || ![...select.options].some((option) => option.value === suggestion.category_id)) {
+        if (select.value === suggestedValue) { select.value = ''; suggestedValue = null; }
+        clearHint();
+        return;
+      }
+      select.value = suggestion.category_id;
+      suggestedValue = suggestion.category_id;
+      const percent = Math.round(suggestion.confidence * 100);
+      hint.textContent = `Sugerida pelo histórico: ${suggestion.name} (${percent}% de confiança, ${suggestion.examples} lançamento(s) parecidos). Você pode trocar.`;
+      hint.hidden = false;
+    } catch { clearHint(); }
+  };
+
+  description.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(askSuggestion, 400); });
+  type.addEventListener('change', () => {
+    if (suggestedValue && select.value === suggestedValue) { select.value = ''; suggestedValue = null; clearHint(); }
+    askSuggestion();
+  });
+  select.addEventListener('change', () => { if (select.value !== suggestedValue) { suggestedValue = null; clearHint(); } });
+})();

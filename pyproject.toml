@@ -20,6 +20,7 @@ dependencies = [
 fincore = "fincore.app:main"
 fincore-backfill-accounting = "fincore.cli:backfill_accounting_main"
 fincore-setup-app-db-role = "fincore.cli:setup_app_db_role_main"
+fincore-seed-demo = "fincore.cli:seed_demo_main"
 
 [dependency-groups]
 dev = [

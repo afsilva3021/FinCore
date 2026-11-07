@@ -301,3 +301,10 @@ html[data-theme="dark"] .title-settlement>summary{color:#acd0f7;border-color:#54
 
 /* Página de acesso negado */
 .forbidden-page { max-width: 640px; }
+
+/* Sugestão automática de categoria */
+.category-hint { color: var(--bs-success-text-emphasis, #146c43); }
+
+/* Perfil somente leitura: esconde ações de escrita (o servidor também bloqueia com 403). */
+.is-readonly [data-drawer-open],
+.is-readonly form[method="post"]:not([action="/logout"]) { display: none !important; }

@@ -8,6 +8,7 @@ from uuid import UUID
 from robyn import Request, Response
 from tortoise.exceptions import IntegrityError
 
+from fincore.application.categorization import suggest_category
 from fincore.application.finance import (
     create_account,
     create_category,
@@ -230,6 +231,29 @@ def register_api_routes(app: object) -> None:
                 "parent_id": str(category.parent_id) if category.parent_id else None,
             },
             201,
+        )
+
+    @app.get("/api/v1/categories/suggestion")
+    @api_login_required
+    async def api_category_suggestion(request: Request, current: CurrentUser) -> Response:
+        """Sugere a categoria pela descrição, aprendendo com os lançamentos da organização."""
+        description = (request.query_params.get("description", "") or "")[:240]
+        transaction_type = request.query_params.get("type", "") or ""
+        result = await suggest_category(
+            await current[1].organization, description, transaction_type
+        )
+        if result is None:
+            return json_response({"suggestion": None})
+        category, suggestion = result
+        return json_response(
+            {
+                "suggestion": {
+                    "category_id": str(category.id),
+                    "name": category.name,
+                    "confidence": suggestion.confidence,
+                    "examples": suggestion.examples,
+                }
+            }
         )
 
     @app.get("/api/v1/categories")

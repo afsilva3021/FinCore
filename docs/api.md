@@ -52,6 +52,7 @@ As rotas JSON usam o mesmo cookie de sessão assinado das páginas. Listas sempr
 | POST | `/api/v1/transactions` | JSON documentado abaixo | `201` criada, `200` repetição idempotente |
 | POST | `/api/v1/transactions/{id}/settle` | sem payload | `200` com movimento liquidado, `settled_at` e `settled_by_id` |
 | POST | `/api/v1/transactions/{id}/reverse` | JSON `{operation_key,competence_date?}` | `201` criado, `200` repetido com a mesma chave |
+| GET | `/api/v1/categories/suggestion` | `description`, `type=income\|expense` | `{suggestion:{category_id,name,confidence,examples}}` ou `{suggestion:null}` quando o histórico não sustenta uma sugestão (mínimo 3 exemplos e 60% de confiança) |
 | GET | `/api/v1/titles` | `limit`, `offset`, `type=payable\|receivable`, `status=open\|partial\|settled\|cancelled` | `{items:[título com open_balance e overdue],limit,offset,total}` |
 | GET | `/api/v1/titles/{id}` | UUID do título | Título com `settlements[]` ou 404 |
 | POST | `/api/v1/titles` | JSON `{operation_key,type,description,counterparty_name,account_id,amount,issue_date,due_date,payment_method,installments?,category_id?,document_number?,notes?}` | `201 {items:[...]}`; reenvio com a mesma chave devolve os mesmos títulos; chave de outra organização = `409` |

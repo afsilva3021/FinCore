@@ -4,6 +4,37 @@ FinCore é uma aplicação web financeira e contábil completa em português (pt
 
 Este README serve como visão de produto e guia reproduzível para desenvolvedores e agentes de código. Leia também [AGENTS.md](AGENTS.md), que define invariantes e o fluxo obrigatório de implementação, e `docs/`, que contém contratos e decisões detalhados.
 
+![Visão geral do FinCore com dados fictícios](docs/screenshots/02-dashboard.png)
+
+## Destaques
+
+- **Contabilidade de verdade:** partidas dobradas com débito = crédito validado na aplicação **e** no banco (`CHECK` constraints), lançamentos efetivados imutáveis e estorno por lançamento compensatório.
+- **Dinheiro sem `float`:** `Decimal` + `NUMERIC(15,2)`, arredondamento explícito e parcelas que somam exatamente o total.
+- **Idempotência:** movimentações, títulos e baixas aceitam reenvio com a mesma `operation_key` sem duplicar — inclusive em envios simultâneos.
+- **Multiempresa e perfis:** isolamento por organização testado em todas as rotas com ID; perfis Proprietário, Financeiro e Somente leitura.
+- **Segurança:** Argon2id, limite de tentativas de login, logout que revoga a sessão, CSRF, CSP sem scripts inline e banco acessível só por um usuário sem permissão de DDL.
+- **Sugestão de categoria por aprendizado:** um classificador Naive Bayes aprende com os lançamentos da própria organização e sugere a categoria pela descrição, sem serviço externo.
+- **Arquitetura verificada:** regras financeiras puras em `domain/` e testes que falham se a apresentação consultar o banco direto.
+
+<details>
+<summary><strong>Mais telas</strong></summary>
+
+| | |
+|---|---|
+| ![Sugestão de categoria ao lançar](docs/screenshots/03-transacao-sugestao-categoria.png) | ![Contas a pagar com parcelas e baixa parcial](docs/screenshots/04-contas-a-pagar.png) |
+| Sugestão de categoria aprendida com o histórico | Contas a pagar: parcelas, baixa parcial e vencidos |
+| ![Plano de contas e diário](docs/screenshots/05-contabilidade.png) | ![Membros e perfis](docs/screenshots/06-membros-perfis.png) |
+| Plano de contas e diário contábil | Membros e perfis de acesso |
+| ![Tema escuro](docs/screenshots/07-dashboard-tema-escuro.png) | ![Celular, perfil somente leitura](docs/screenshots/08-celular-somente-leitura.png) |
+| Tema escuro | Celular, perfil somente leitura |
+
+As telas usam a organização fictícia criada por `fincore-seed-demo`.
+</details>
+
+### Por que Robyn?
+
+O Robyn é um framework web Python com servidor em Rust, assíncrono e com poucas camadas. Foi escolhido para estudar como montar sessão, CSRF, autorização, middleware e paginação sem a "mágica" de um framework completo — o que fica visível em `presentation/web.py` — mantendo desempenho alto. O custo é um ecossistema menor que o de FastAPI ou Django; por isso a especificação OpenAPI é escrita à mão em `docs/openapi.yaml`.
+
 ## Estado atual
 
 - Aplicação local padrão: `http://127.0.0.1:8080`.
@@ -22,6 +53,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-06 | Sugestão de categoria por aprendizado com o histórico (Naive Bayes, sem serviço externo), comando `fincore-seed-demo`, screenshots no README e ações de escrita escondidas para o perfil somente leitura. Correção: o painel "Saldos por conta" da visão geral sempre dizia "Nenhuma conta cadastrada" (a rota não enviava os saldos ao template); o perfil exibia "Administrador" fixo. |
 | 2026-11-06 | API JSON de títulos (`/api/v1/titles`: listar, detalhar, cadastrar com parcelas, baixar, cancelar) com idempotência por `operation_key` e especificação OpenAPI em `docs/openapi.yaml`. Correção: reenvio de baixa com chave de outra organização agora é conflito `409` em vez de devolver a baixa alheia. Migration `0018`. |
 | 2026-11-06 | Arquitetura: `web.py` (2.600 linhas) dividido em `presentation/routes/` por área; decorators `login_required`/`api_login_required` no lugar de 43 blocos repetidos; todas as consultas das rotas movidas para `application/queries.py` (inclusive o N+1 restante da conciliação); testes de arquitetura. |
 | 2026-11-06 | Camada `domain/` com as regras financeiras puras (parcelas, baixas, estados de título, partidas dobradas), testadas sem banco; arredondamento contábil padronizado em meio para cima. |
@@ -231,6 +263,18 @@ Para verificar o serviço:
 ```bash
 curl http://127.0.0.1:8080/health
 ```
+
+### Dados de demonstração (opcional)
+
+Para explorar o sistema ou montar uma demo pública, crie uma organização fictícia com três meses de movimentos, títulos parcelados, uma baixa parcial e um usuário somente leitura:
+
+```bash
+FINCORE_ALLOW_DEMO_SEED=1 uv run fincore-seed-demo
+# com containers:
+docker compose run --rm -e FINCORE_ALLOW_DEMO_SEED=1 app fincore-seed-demo
+```
+
+Login: `demo@fincore.example` / `Paes-Quentinhos-2026` (proprietária) e `leitura@fincore.example` (somente leitura). O comando exige a variável de confirmação e recusa rodar duas vezes no mesmo banco. **Nunca use em banco com dados reais.**
 
 Para movimentos contábeis históricos anteriores ao vínculo com o razão, o backfill opcional é idempotente:
 

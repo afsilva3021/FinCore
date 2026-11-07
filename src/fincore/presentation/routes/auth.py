@@ -200,6 +200,7 @@ def register_web_routes(app: object) -> None:
                 organization=organization,
                 csrf=_csrf_from_auth(request),
                 total_balance=sum((balance for _, balance in balances), Decimal("0.00")),
+                balances=balances,
                 income=income,
                 expenses=expenses,
                 open_count=open_count,

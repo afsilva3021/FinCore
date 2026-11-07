@@ -112,3 +112,19 @@ async def test_transactions_page_paginates_instead_of_hiding_older_records() -> 
         client.get, "/transactions", headers=headers, query_params={"page": "abc"}
     )
     assert weird.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_dashboard_lists_balances_per_account() -> None:
+    user, _, organization, account = await _setup()
+    await _movement(organization, user, account, "125.50")
+    session = serializer.dumps(
+        {"uid": str(user.id), "org": str(organization.id), "sv": user.session_version}
+    )
+    page = await asyncio.to_thread(
+        RobynTestClient(app).get, "/dashboard", headers={"cookie": f"{COOKIE_AUTH}={session}"}
+    )
+    assert page.status_code == 200
+    assert "Nenhuma conta cadastrada" not in page.text
+    assert "R$ 125,50" in page.text
+    assert "Proprietário" in page.text and "Administrador" not in page.text

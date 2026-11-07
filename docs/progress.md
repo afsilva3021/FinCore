@@ -176,3 +176,11 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Idempotência na criação (`FinancialTitle.operation_key`, migration `0018`; corrida resolvida devolvendo o que o outro envio criou) e nas baixas.
 - [x] Correção de segurança: `settle_title` devolvia a baixa existente para qualquer chave repetida, inclusive de outra organização; agora só para o mesmo título e organização (senão `409`).
 - [x] `docs/openapi.yaml` validado com `openapi-spec-validator`.
+
+## Portfólio e sugestão de categoria (2026-11-06)
+
+- [x] `domain/categorization.py` (Naive Bayes multinomial com suavização de Laplace, limiar de confiança e mínimo de exemplos) + `GET /api/v1/categories/suggestion`; formulário de transação preenche a categoria e mostra a confiança. Testado sem banco, com banco e no navegador ("Conta de luz Enel novembro" → Energia, 96%).
+- [x] `fincore-seed-demo` com trava `FINCORE_ALLOW_DEMO_SEED=1` e recusa em segunda execução.
+- [x] Screenshots em `docs/screenshots/` capturados no Chromium a partir do seed (desktop 2x, tema escuro e celular).
+- [x] Corrigido: visão geral não exibia saldos por conta (variável `balances` nunca enviada); "Administrador" fixo no perfil; textos "até 100/200" após a paginação.
+- [ ] Demo online: depende de hospedagem e domínio do responsável pelo projeto.
