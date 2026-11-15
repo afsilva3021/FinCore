@@ -7,7 +7,13 @@ from uuid import UUID
 from robyn import Request, Response
 
 from fincore.application.queries import get_title, title_settlements, titles_api_query
-from fincore.application.titles import cancel_title, create_titles, settle_title, title_balances
+from fincore.application.titles import (
+    cancel_title,
+    create_titles,
+    reverse_settlement,
+    settle_title,
+    title_balances,
+)
 from fincore.domain.money import parse_api_amount
 from fincore.infrastructure.models import FinancialTitle, TitleSettlement
 from fincore.presentation.routes.api import (
@@ -57,6 +63,10 @@ def settlement_json(item: TitleSettlement) -> dict[str, object]:
         "payment_method": item.payment_method,
         "account_id": str(item.account_id),
         "financial_transaction_id": str(item.financial_transaction_id),
+        "reversed_at": item.reversed_at.isoformat() if item.reversed_at else None,
+        "reversal_transaction_id": str(item.reversal_transaction_id)
+        if item.reversal_transaction_id
+        else None,
     }
 
 
@@ -94,7 +104,7 @@ def _optional_amount(payload: dict[str, object], key: str) -> Decimal:
 
 def _error(exc: ValueError) -> Response:
     message = str(exc)
-    if "não encontrado" in message:
+    if "não encontrad" in message:
         return error_response("not_found", message, 404)
     if "já foi usada" in message:
         return error_response("idempotency_conflict", message, 409)
@@ -210,6 +220,35 @@ def register_title_api_routes(app: object) -> None:
                 "idempotency_conflict", "A chave já foi usada para outra baixa.", 409
             )
         return json_response(settlement_json(settlement), 201)
+
+    @app.post("/api/v1/titles/:title_id/settlements/:settlement_id/reverse")
+    @api_login_required
+    async def api_reverse_settlement(request: Request, current: CurrentUser) -> Response:
+        if not require_csrf(request):
+            return error_response("csrf_failed", "Token CSRF ausente ou inválido.", 403)
+        title = await _owned_title(request, current)
+        if title is None:
+            return error_response("not_found", "Título não encontrado.", 404)
+        try:
+            settlement_id = UUID(request.path_params["settlement_id"])
+        except KeyError, ValueError:
+            return error_response("not_found", "Baixa não encontrada neste título.", 404)
+        try:
+            payload = json_payload(request)
+            reversed_on = _date(payload, "reversed_on") if payload.get("reversed_on") else None
+            settlement = await reverse_settlement(
+                organization=await current[1].organization,
+                user=current[0],
+                title_id=title.id,
+                settlement_id=settlement_id,
+                operation_key=_uuid(payload, "operation_key"),
+                reversed_on=reversed_on or date.today(),
+            )
+        except ValueError as exc:
+            if "período contábil" in str(exc) or "cancelados" in str(exc):
+                return error_response("invalid_state", str(exc), 409)
+            return _error(exc)
+        return json_response(settlement_json(settlement))
 
     @app.post("/api/v1/titles/:title_id/cancel")
     @api_login_required

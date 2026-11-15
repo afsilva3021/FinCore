@@ -9,6 +9,17 @@ from tortoise.exceptions import IntegrityError
 from tortoise.functions import Sum
 from tortoise.transactions import in_transaction
 
+from fincore.domain.accounting import (
+    ROLE_BANK,
+    ROLE_BANK_FEES,
+    ROLE_CATEGORY,
+    ROLE_DISCOUNT_GIVEN,
+    ROLE_DISCOUNT_RECEIVED,
+    ROLE_FINANCIAL_EXPENSE,
+    ROLE_FINANCIAL_INCOME,
+    ensure_balanced,
+    ensure_period_open,
+)
 from fincore.domain.money import parse_brl
 from fincore.infrastructure.models import (
     Category,
@@ -18,10 +29,32 @@ from fincore.infrastructure.models import (
     JournalEntryLine,
     LedgerAccount,
     Organization,
+    TitleSettlement,
     User,
 )
 
 CENT = Decimal("0.01")
+
+# Contas de sistema usadas nas baixas de títulos: papel -> (código, nome, natureza).
+SETTLEMENT_SYSTEM_ACCOUNTS = {
+    ROLE_FINANCIAL_INCOME: ("SYS-FIN-REV", "Receitas financeiras (juros e multas)", "revenue"),
+    ROLE_FINANCIAL_EXPENSE: ("SYS-FIN-EXP", "Despesas financeiras (juros e multas)", "expense"),
+    ROLE_DISCOUNT_GIVEN: ("SYS-DISC-GIVEN", "Descontos concedidos", "expense"),
+    ROLE_DISCOUNT_RECEIVED: ("SYS-DISC-RECV", "Descontos obtidos", "revenue"),
+    ROLE_BANK_FEES: ("SYS-BANK-FEES", "Tarifas bancárias", "expense"),
+}
+
+
+async def books_closed_until(organization: Organization) -> date | None:
+    """Data de fechamento lida do banco (o objeto em memória pode estar desatualizado)."""
+    rows = await Organization.filter(id=organization.id).values_list(
+        "books_closed_until", flat=True
+    )
+    return rows[0] if rows else None
+
+
+async def ensure_open_period(organization: Organization, entry_date: date) -> None:
+    ensure_period_open(entry_date, await books_closed_until(organization))
 
 
 def parse_money(value: str) -> Decimal:
@@ -74,6 +107,7 @@ async def _create_journal(
     description: str,
     lines: list[tuple[LedgerAccount, Decimal, Decimal]],
     source_transaction: FinancialTransaction | None = None,
+    reversal_of: JournalEntry | None = None,
 ) -> JournalEntry:
     if source_transaction is not None:
         existing = await JournalEntry.get_or_none(source_transaction=source_transaction)
@@ -82,12 +116,16 @@ async def _create_journal(
     existing = await JournalEntry.get_or_none(idempotency_key=idempotency_key)
     if existing:
         return existing
+    # Todo lançamento automático passa por aqui: período aberto e partidas equilibradas.
+    await ensure_open_period(organization, entry_date)
+    ensure_balanced([(debit, credit) for _, debit, credit in lines], {"BRL"})
     posted_at = datetime.now(UTC)
     entry = await JournalEntry.create(
         idempotency_key=idempotency_key,
         organization=organization,
         created_by=user,
         source_transaction=source_transaction,
+        reversal_of=reversal_of,
         entry_date=entry_date,
         description=description[:240],
         status="posted",
@@ -139,8 +177,26 @@ async def _ensure_financial_ledger_account(
     return ledger_account
 
 
-async def _create_movement_journal(
+async def _category_ledger(
     organization: Organization, user: User, movement: FinancialTransaction
+) -> LedgerAccount:
+    """Conta de receita/despesa da categoria do movimento, ou a conta geral sem categoria."""
+    category = None
+    if movement.category_id:
+        category = await Category.get_or_none(id=movement.category_id, organization=organization)
+    if category and category.ledger_account_id:
+        return await LedgerAccount.get(id=category.ledger_account_id)
+    code = "SYS-REV" if movement.transaction_type == "income" else "SYS-EXP"
+    name = "Receitas sem categoria" if code == "SYS-REV" else "Despesas sem categoria"
+    kind = "revenue" if code == "SYS-REV" else "expense"
+    return await _system_account(organization, user, code, name, kind)
+
+
+async def _create_movement_journal(
+    organization: Organization,
+    user: User,
+    movement: FinancialTransaction,
+    entry_date: date | None = None,
 ) -> JournalEntry | None:
     if movement.status != "settled" or movement.transaction_type == "transfer_in":
         return None
@@ -167,18 +223,7 @@ async def _create_movement_journal(
         ]
         description = f"Transferência: {movement.description}"
     else:
-        category = None
-        if movement.category_id:
-            category = await Category.get_or_none(
-                id=movement.category_id, organization=organization
-            )
-        if category and category.ledger_account_id:
-            category_ledger = await LedgerAccount.get(id=category.ledger_account_id)
-        else:
-            code = "SYS-REV" if movement.transaction_type == "income" else "SYS-EXP"
-            name = "Receitas sem categoria" if code == "SYS-REV" else "Despesas sem categoria"
-            kind = "revenue" if code == "SYS-REV" else "expense"
-            category_ledger = await _system_account(organization, user, code, name, kind)
+        category_ledger = await _category_ledger(organization, user, movement)
         if movement.transaction_type == "income":
             lines = [
                 (source_ledger, movement.amount, Decimal("0.00")),
@@ -194,10 +239,74 @@ async def _create_movement_journal(
         organization=organization,
         user=user,
         idempotency_key=uuid5(NAMESPACE_URL, f"fincore:transaction:{movement.id}"),
-        entry_date=movement.competence_date,
+        entry_date=entry_date or movement.competence_date,
         description=description,
         lines=lines,
         source_transaction=movement,
+    )
+
+
+async def create_settlement_journal(
+    organization: Organization,
+    user: User,
+    movement: FinancialTransaction,
+    role_lines: list[tuple[str, Decimal, Decimal]],
+) -> JournalEntry:
+    """Lançamento da baixa de um título, com juros, multa, desconto e tarifa separados.
+
+    `role_lines` vem de `domain.accounting.settlement_journal_lines`; aqui cada papel é
+    trocado pela conta do razão correspondente.
+    """
+    account = await FinancialAccount.get(id=movement.account_id, organization=organization)
+    accounts = {
+        ROLE_BANK: await _ensure_financial_ledger_account(organization, user, account),
+        ROLE_CATEGORY: await _category_ledger(organization, user, movement),
+    }
+    lines = []
+    for role, debit, credit in role_lines:
+        if role not in accounts:
+            code, name, kind = SETTLEMENT_SYSTEM_ACCOUNTS[role]
+            accounts[role] = await _system_account(organization, user, code, name, kind)
+        lines.append((accounts[role], debit, credit))
+    return await _create_journal(
+        organization=organization,
+        user=user,
+        idempotency_key=uuid5(NAMESPACE_URL, f"fincore:transaction:{movement.id}"),
+        entry_date=movement.competence_date,
+        description=movement.description,
+        lines=lines,
+        source_transaction=movement,
+    )
+
+
+async def _create_reversal_journal(
+    organization: Organization,
+    user: User,
+    movement: FinancialTransaction,
+    original: FinancialTransaction,
+) -> JournalEntry | None:
+    """Lançamento de estorno: as mesmas contas do lançamento original, invertidas.
+
+    Espelhar o original (em vez de lançar numa conta genérica) zera exatamente as contas
+    que ele movimentou, inclusive juros, descontos e tarifas de uma baixa.
+    """
+    original_entry = await JournalEntry.get_or_none(source_transaction=original)
+    if original_entry is None:
+        # Movimento antigo sem lançamento: mantém o comportamento anterior.
+        return await _create_movement_journal(organization, user, movement)
+    original_lines = await JournalEntryLine.filter(journal_entry=original_entry).select_related(
+        "account"
+    )
+    already_reversed = await JournalEntry.exists(reversal_of=original_entry)
+    return await _create_journal(
+        organization=organization,
+        user=user,
+        idempotency_key=uuid5(NAMESPACE_URL, f"fincore:transaction:{movement.id}"),
+        entry_date=movement.competence_date,
+        description=movement.description,
+        lines=[(line.account, line.credit, line.debit) for line in original_lines],
+        source_transaction=movement,
+        reversal_of=None if already_reversed else original_entry,
     )
 
 
@@ -549,7 +658,13 @@ async def settle_movement(organization: Organization, user: User, transaction_id
         movement.status = "settled"
         movement.settled_at = settled_at
         movement.settled_by_id = user.id
-        await _create_movement_journal(organization, user, movement)
+        # O lançamento usa a competência; se ela caiu num período já fechado, usa a data
+        # da liquidação para não reabrir o período nem travar a liquidação.
+        entry_date = movement.competence_date
+        closed_until = await books_closed_until(organization)
+        if closed_until is not None and entry_date <= closed_until:
+            entry_date = date.today()
+        await _create_movement_journal(organization, user, movement, entry_date)
     return True
 
 
@@ -559,8 +674,14 @@ async def reverse_movement(
     transaction_id: UUID,
     operation_key: UUID,
     competence_date: date,
+    *,
+    from_settlement: bool = False,
 ) -> FinancialTransaction:
-    """Adds a compensating movement and journal while preserving the posted original."""
+    """Adds a compensating movement and journal while preserving the posted original.
+
+    A movimentação gerada pela baixa de um título só é estornada pelo estorno da baixa
+    (`from_settlement=True`), que também reabre o saldo do título.
+    """
     existing_key = await FinancialTransaction.get_or_none(
         operation_key=operation_key, organization=organization
     )
@@ -589,6 +710,13 @@ async def reverse_movement(
             )
             if original is None:
                 raise ValueError("A transferência original está incompleta.")
+        if original.reversal_of_id is not None:
+            raise ValueError("Um estorno não pode ser estornado; registre uma nova movimentação.")
+        if not from_settlement and await TitleSettlement.exists(financial_transaction=original):
+            raise ValueError(
+                "Esta movimentação é a baixa de um título; estorne a baixa em "
+                "Contas a pagar/receber para reabrir o saldo do título."
+            )
         if await FinancialTransaction.filter(reversal_of=original).exists():
             raise ValueError("Esta movimentação já possui estorno.")
         if await FinancialTransaction.exists(operation_key=operation_key):
@@ -647,7 +775,7 @@ async def reverse_movement(
                 settled_at=datetime.now(UTC),
                 status="settled",
             )
-        await _create_movement_journal(organization, user, movement)
+        await _create_reversal_journal(organization, user, movement, original)
         return movement
 
 

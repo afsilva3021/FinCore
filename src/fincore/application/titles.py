@@ -7,16 +7,19 @@ from uuid import UUID, uuid4
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
-from fincore.application.finance import _create_movement_journal
+from fincore.application.finance import create_settlement_journal, reverse_movement
+from fincore.domain.accounting import settlement_journal_lines
 from fincore.domain.money import MAX_AMOUNT, parse_brl, quantize_money
 from fincore.domain.titles import (
     PAYMENT_METHODS,
     TITLE_TYPES,
     calculate_settlement,
     ensure_can_cancel,
+    ensure_can_reverse_settlement,
     ensure_can_settle,
     open_balance,
     split_installments,
+    status_after_settlement_reversal,
 )
 from fincore.infrastructure.models import (
     Category,
@@ -237,7 +240,10 @@ async def create_titles(
 async def title_balances(titles: list[FinancialTitle]) -> dict[UUID, Decimal]:
     if not titles:
         return {}
-    settlements = await TitleSettlement.filter(title_id__in=[title.id for title in titles]).all()
+    # Baixas estornadas ficam no histórico, mas não abatem o saldo.
+    settlements = await TitleSettlement.filter(
+        title_id__in=[title.id for title in titles], reversed_at=None
+    ).all()
     applied: dict[UUID, list[Decimal]] = {}
     for settlement in settlements:
         applied.setdefault(settlement.title_id, []).append(settlement.amount_applied)
@@ -284,7 +290,7 @@ async def settle_title(
         if title is None:
             raise ValueError("Título não encontrado nesta organização.")
         ensure_can_settle(title.status)
-        previous = await TitleSettlement.filter(title=title).values_list(
+        previous = await TitleSettlement.filter(title=title, reversed_at=None).values_list(
             "amount_applied", flat=True
         )
         amounts = calculate_settlement(
@@ -317,7 +323,20 @@ async def settle_title(
             settled_at=datetime.now(UTC),
             status="settled",
         )
-        await _create_movement_journal(organization, user, transaction)
+        await create_settlement_journal(
+            organization,
+            user,
+            transaction,
+            settlement_journal_lines(
+                title_type=title.title_type,
+                applied=amounts.applied,
+                discount=amounts.discount,
+                interest=amounts.interest,
+                fine=amounts.fine,
+                fees=amounts.fees,
+                net_amount=amounts.net_amount,
+            ),
+        )
         settlement = await TitleSettlement.create(
             organization=organization,
             title=title,
@@ -350,7 +369,67 @@ async def cancel_title(*, organization: Organization, title_id: UUID) -> Financi
         )
         if title is None:
             raise ValueError("Título não encontrado nesta organização.")
-        ensure_can_cancel(title.status, await TitleSettlement.filter(title=title).exists())
+        ensure_can_cancel(
+            title.status, await TitleSettlement.filter(title=title, reversed_at=None).exists()
+        )
         title.status = "cancelled"
         await title.save(update_fields=["status"])
         return title
+
+
+async def reverse_settlement(
+    *,
+    organization: Organization,
+    user: User,
+    title_id: UUID,
+    settlement_id: UUID,
+    operation_key: UUID,
+    reversed_on: date,
+) -> TitleSettlement:
+    """Estorna uma baixa: devolve o saldo ao título e compensa o caixa e o razão.
+
+    Numa única transação: cria a movimentação compensatória (com lançamento contábil
+    espelhado), marca a baixa como estornada — ela continua no histórico — e recalcula a
+    situação do título. Repetir o estorno de uma baixa já estornada não faz nada.
+    """
+    async with in_transaction():
+        title = (
+            await FinancialTitle.filter(id=title_id, organization=organization)
+            .select_for_update()
+            .first()
+        )
+        if title is None:
+            raise ValueError("Título não encontrado nesta organização.")
+        settlement = (
+            await TitleSettlement.filter(id=settlement_id, title=title, organization=organization)
+            .select_for_update()
+            .first()
+        )
+        if settlement is None:
+            raise ValueError("Baixa não encontrada neste título.")
+        if settlement.reversed_at is not None:
+            return settlement
+        ensure_can_reverse_settlement(title.status)
+        movement = await reverse_movement(
+            organization,
+            user,
+            settlement.financial_transaction_id,
+            operation_key,
+            reversed_on,
+            from_settlement=True,
+        )
+        # Chave reaproveitada de outra operação devolveria um movimento que não é o
+        # estorno desta baixa.
+        if movement.reversal_of_id != settlement.financial_transaction_id:
+            raise ValueError("A chave de operação já foi usada.")
+        settlement.reversed_at = datetime.now(UTC)
+        settlement.reversed_by = user
+        settlement.reversal_transaction = movement
+        await settlement.save(
+            update_fields=["reversed_at", "reversed_by_id", "reversal_transaction_id"]
+        )
+        title.status = status_after_settlement_reversal(
+            await TitleSettlement.filter(title=title, reversed_at=None).exists()
+        )
+        await title.save(update_fields=["status"])
+        return settlement

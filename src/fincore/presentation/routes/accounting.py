@@ -11,12 +11,17 @@ from fincore.application.accounting import (
     create_ledger_account,
     post_journal_entry,
     reverse_journal_entry,
+    set_books_closed_until,
     update_draft_journal_entry,
 )
+from fincore.application.members import can_manage_members
+from fincore.application.statements import financial_statements
 from fincore.presentation.web import (
     CurrentUser,
+    _csrf_from_auth,
     _form_data,
     _journal_lines_from_form,
+    _page,
     _redirect,
     _render_accounting,
     _response,
@@ -32,6 +37,67 @@ def register_accounting_routes(app: object) -> None:
         return _response(
             await _render_accounting(request, current[0], await current[1].organization)
         )
+
+    @app.get("/accounting/statements")
+    @login_required
+    async def accounting_statements_page(request: Request, current: CurrentUser) -> Response:
+        organization = await current[1].organization
+        today = date.today()
+        statements = error = None
+        start, end = today.replace(day=1), today
+        try:
+            if request.query_params.get("start", ""):
+                start = date.fromisoformat(request.query_params.get("start", ""))
+            if request.query_params.get("end", ""):
+                end = date.fromisoformat(request.query_params.get("end", ""))
+            statements = await financial_statements(organization, start, end)
+        except ValueError as exc:
+            error = str(exc) if "data inicial" in str(exc) else "Informe datas válidas."
+        return _response(
+            _page(
+                "accounting/statements.html",
+                name=current[0].full_name,
+                organization=organization,
+                csrf=_csrf_from_auth(request),
+                active="accounting",
+                section="Demonstrativos",
+                start=start.isoformat(),
+                end=end.isoformat(),
+                statements=statements,
+                error=error,
+            ),
+            400 if error else 200,
+        )
+
+    @app.post("/accounting/period-lock")
+    @login_required
+    async def period_lock_page(request: Request, current: CurrentUser) -> Response:
+        form = _form_data(request)
+        organization = await current[1].organization
+        if not _valid_csrf(request, form.get("csrf", "")):
+            return _redirect("/accounting")
+        # Fechar ou reabrir período muda o que todos podem lançar: só o proprietário.
+        if not can_manage_members(current[1].role):
+            return _response(
+                await _render_accounting(
+                    request,
+                    current[0],
+                    organization,
+                    "Só o proprietário pode alterar o fechamento do período.",
+                ),
+                403,
+            )
+        try:
+            raw = form.get("closed_until", "").strip()
+            await set_books_closed_until(
+                organization, current[0], date.fromisoformat(raw) if raw else None
+            )
+        except ValueError as exc:
+            message = str(exc) if "futuro" in str(exc) else "Informe uma data de fechamento válida."
+            return _response(
+                await _render_accounting(request, current[0], organization, message), 400
+            )
+        return _redirect("/accounting")
 
     @app.post("/accounting/accounts")
     @login_required

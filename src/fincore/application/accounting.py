@@ -8,12 +8,14 @@ from tortoise.exceptions import IntegrityError
 from tortoise.functions import Sum
 from tortoise.transactions import in_transaction
 
+from fincore.application.finance import ensure_open_period
 from fincore.domain.accounting import (
     ACCOUNT_TYPES,
     ensure_balanced,
     ensure_can_post,
     normal_balance,
     normalize_journal_lines,
+    validate_closing_date,
 )
 from fincore.domain.money import parse_brl
 from fincore.infrastructure.models import (
@@ -183,6 +185,7 @@ async def post_journal_entry(organization: Organization, entry_id: UUID) -> Jour
         if entry.status == "posted":
             return entry
         ensure_can_post(entry.status)
+        await ensure_open_period(organization, entry.entry_date)
         lines = await JournalEntryLine.filter(journal_entry=entry).all()
         ensure_balanced(
             [(line.debit, line.credit) for line in lines], {line.currency for line in lines}
@@ -204,6 +207,16 @@ async def reverse_journal_entry(
         )
         if original is None:
             raise ValueError("Somente lançamentos efetivados podem ser estornados.")
+        # Lançamento gerado por uma movimentação financeira: estornar só o diário deixaria
+        # o saldo da conta financeira diferente do razão.
+        if original.source_transaction_id is not None:
+            raise ValueError(
+                "Este lançamento foi gerado por uma movimentação financeira; "
+                "estorne a movimentação (ou a baixa do título) de origem."
+            )
+        if original.reversal_of_id is not None:
+            raise ValueError("Um estorno não pode ser estornado; crie um novo lançamento.")
+        await ensure_open_period(organization, date.today())
         if await JournalEntry.exists(reversal_of=original):
             raise ValueError("Este lançamento já possui estorno.")
         original_lines = await JournalEntryLine.filter(journal_entry=original).all()
@@ -270,3 +283,20 @@ async def get_ledger_balances(
     for account in accounts:
         account_rows.append((account, account_total(account)))
     return account_rows
+
+
+async def set_books_closed_until(
+    organization: Organization, user: User, closed_until: date | None
+) -> date | None:
+    """Fecha o período até a data (inclusive) ou reabre com `None`.
+
+    Com o período fechado, nenhum lançamento — manual ou gerado por movimentação, baixa
+    ou estorno — é efetivado com data até o fechamento. Guarda quem alterou e quando.
+    """
+    validate_closing_date(closed_until, date.today())
+    await Organization.filter(id=organization.id).update(
+        books_closed_until=closed_until,
+        books_closed_by_id=user.id,
+        books_closed_at=datetime.now(UTC),
+    )
+    return closed_until

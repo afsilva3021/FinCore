@@ -44,3 +44,17 @@
 - **Negociação parada** = 14 dias sem mudar de etapa (`STALLED_AFTER_DAYS`), fixo por enquanto.
 - **Quadro sem arrastar e soltar:** mover etapa é um formulário com seletor, o que funciona sem JavaScript e com leitor de tela; limite de 300 negociações abertas no quadro.
 - **Pesquisa de referência:** as regras vieram de resumos de busca e comparativos sobre EspoCRM, SuiteCRM, Twenty, Odoo, ERPNext, Zoho, RD Station e Pipedrive; a documentação oficial desses produtos não foi lida por inteiro. Nenhum código foi copiado.
+
+## Regras financeiras e contábeis frente a ERPs (2026-11-15)
+
+Comparação com o comportamento conhecido de ERPNext, Odoo e Django Ledger (referências do `AGENTS.md`), feita de memória do funcionamento desses produtos, sem consultar a documentação nesta entrega.
+
+- **Regime de caixa mantido.** ERPs lançam a fatura por competência (contas a receber/pagar). Mudar exigiria lançar todo título no razão e migrar os existentes; fica como decisão de produto pendente. Consequência registrada em `docs/accounting.md`.
+- **Baixa com contas separadas** para juros/multa, descontos e tarifas, como nos ERPs, em vez de jogar o valor líquido na conta da categoria. Só vale para baixas novas.
+- **Estorno espelha o lançamento original**, em vez de usar uma conta genérica.
+- **Estorno de baixa** como operação própria que reabre o título; estornar a movimentação da baixa pelo extrato passou a ser recusado (antes deixava o título "pago" com o dinheiro devolvido).
+- **Título com baixas apenas estornadas pode ser cancelado.** Lê-se a regra "título com baixa não é cancelado" como baixa em vigor; a baixa estornada permanece no histórico.
+- **Lançamento gerado por movimentação não é estornado no diário**, e estorno não é estornado.
+- **Trava de período** por data única na organização (como o lock date do Odoo), alterável só pelo proprietário. Não há períodos nomeados nem encerramento de exercício.
+- **Liquidação com competência em período fechado** lança na data da liquidação; alternativa (recusar) travaria movimentos antigos em aberto sem saída.
+- **Demonstrativos derivados do razão**, com resultado acumulado calculado no balanço em vez de lançamento de encerramento.

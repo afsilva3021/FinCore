@@ -25,6 +25,7 @@ from fincore.application.titles import (
     cancel_title,
     create_titles,
     parse_adjustment,
+    reverse_settlement,
     settle_title,
 )
 from fincore.presentation.web import (
@@ -370,6 +371,42 @@ def register_finance_routes(app: object) -> None:
                 fees=parse_adjustment(form.get("fees", "0")),
                 proof_reference=form.get("proof_reference", ""),
                 notes=form.get("notes", ""),
+            )
+            return _redirect(target)
+        except ValueError as exc:
+            return _response(
+                await _render_title_register(
+                    request, current[0], organization, title_type, str(exc)
+                ),
+                400,
+            )
+
+    @app.post("/titles/:title_id/settlements/:settlement_id/reverse")
+    @login_required
+    async def reverse_title_settlement_page(request: Request, current: CurrentUser) -> Response:
+        form = _form_data(request)
+        organization = await current[1].organization
+        title = await _title_from_path(request, organization)
+        title_type = title.title_type if title else "payable"
+        target = "/payables" if title_type == "payable" else "/receivables"
+        if not _valid_csrf(request, form.get("csrf", "")):
+            return _redirect(target)
+        try:
+            if title is None:
+                raise ValueError("Título não encontrado nesta organização.")
+            try:
+                settlement_id = UUID(request.path_params["settlement_id"])
+            except KeyError, ValueError:
+                raise ValueError("Baixa não encontrada neste título.") from None
+            await reverse_settlement(
+                organization=organization,
+                user=current[0],
+                title_id=title.id,
+                settlement_id=settlement_id,
+                operation_key=_form_uuid(
+                    form, "operation_key", "Atualize a página e tente o estorno novamente."
+                ),
+                reversed_on=date.today(),
             )
             return _redirect(target)
         except ValueError as exc:

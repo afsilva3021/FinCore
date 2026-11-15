@@ -48,6 +48,17 @@
           </form>
         </details>
         {% endif %}
+        {% if settlements.get(item.id) %}
+        <details class="title-settlement"><summary>Baixas ({{ settlements[item.id]|length }})</summary>
+          <div class="title-settlement-form">
+            {% for baixa in settlements[item.id] %}
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-2"><span>{{ baixa.paid_on.strftime('%d/%m/%Y') }} · aplicado R$ {{ baixa.amount_applied|brl }} · líquido R$ {{ baixa.net_amount|brl }}</span>
+              <form method="post" action="/titles/{{ item.id }}/settlements/{{ baixa.id }}/reverse" data-confirm="Estornar esta baixa? O valor volta ao saldo do título e o caixa recebe um movimento compensatório. A baixa continua no histórico."><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="operation_key" value="{{ reversal_keys[baixa.id|string] }}"><button class="btn btn-sm btn-outline-danger" type="submit">Estornar baixa</button></form></div>
+            {% endfor %}
+            <small>O estorno usa a data de hoje e espelha o lançamento contábil da baixa.</small>
+          </div>
+        </details>
+        {% endif %}
         {% if item.status == 'open' and item.id not in settlement_ids %}<form method="post" action="/titles/{{ item.id }}/cancel" data-confirm="Cancelar este título em aberto? O cancelamento ficará registrado."><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-danger" type="submit">Cancelar</button></form>{% endif %}
       </td>
     </tr>

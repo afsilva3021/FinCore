@@ -46,7 +46,7 @@ O Robyn é um framework web Python com servidor em Rust, assíncrono e com pouca
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0020`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- Migrations versionadas até `0022`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks, Open Finance e as mensagens do CRM (e-mail, WhatsApp) são somente simuladores locais. Não enviam pagamentos nem mensagens e não acessam provedores.
 - O CRM (leads, negociações, atividades, propostas) é funcional e persistido; ele não envia e-mail, WhatsApp nem campanhas.
@@ -59,6 +59,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-15 | **Regras financeiras e contábeis no padrão de ERP:** estorno de baixa de título (reabre o saldo e compensa caixa e razão); baixa lança juros/multa, descontos e tarifas em contas próprias; estorno de movimentação espelha as contas do lançamento original (antes ia para "Despesas sem categoria"); fechamento de período contábil pelo proprietário; página de balancete, DRE e balanço patrimonial em `/accounting/statements`. Correções: a movimentação de uma baixa podia ser estornada pelo extrato deixando o título como pago; estornos podiam ser estornados. Migrations `0021` e `0022`. Regras em [docs/accounting.md](docs/accounting.md). |
 | 2026-11-15 | **Revisão de segurança antes da entrega do CRM:** valor decimal gigante na API do CRM respondia `500` (agora `400`); mensagens de sucesso na URL passam a ser códigos conhecidos no CRM e lista fechada em `/contacts` (antes, texto livre na URL aparecia como aviso da aplicação); uma negociação aceita só uma proposta (evita gerar títulos em dobro); caractere NUL em formulários e JSON é descartado/recusado em vez de causar `500` em qualquer rota. `bandit` e `pip-audit` sem achados novos. |
 | 2026-11-15 | **CRM:** leads com qualificação e conversão em contato/negociação (com checagem de duplicidade), funil com etapas configuráveis e probabilidade, negociações com ganho/perda e histórico, atividades, propostas com itens e painel comercial (conversão, taxa de ganho, previsão ponderada, ciclo médio, negociações paradas). O aceite da proposta gera títulos a receber parcelados de forma atômica e idempotente, sem movimentar caixa. API JSON `/api/v1/crm` com OpenAPI. Simuladores identificados de e-mail e WhatsApp. Migrations `0019` e `0020`. Regras em [docs/crm.md](docs/crm.md). |
 | 2026-11-06 | Sugestão de categoria por aprendizado com o histórico (Naive Bayes, sem serviço externo), comando `fincore-seed-demo`, screenshots no README e ações de escrita escondidas para o perfil somente leitura. Correção: o painel "Saldos por conta" da visão geral sempre dizia "Nenhuma conta cadastrada" (a rota não enviava os saldos ao template); o perfil exibia "Administrador" fixo. |
@@ -149,7 +150,9 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
 - Campos específicos a receber: pedido/contrato/venda, meio e data de envio da cobrança, previsão de recebimento e link/identificador.
 - Parcelas são títulos próprios, ligadas por grupo, e preservam o total com valores decimais exatos.
 - Baixas parciais/finais guardam valor aplicado, data, desconto, juros, multa, tarifas, valor líquido, conta, forma e referência do comprovante. O saldo é derivado dos valores aplicados.
-- Baixa e transação do extrato são gravadas atomicamente; títulos sem baixa não alteram saldo. Cancelamento é permitido somente para título aberto sem baixa. Títulos com baixa não são excluídos fisicamente. Quando uma baixa ou cancelamento é recusado, a página do tipo do título (a pagar/receber) mostra o motivo.
+- A baixa lança no razão o principal na conta da categoria e juros/multa, descontos e tarifas em contas próprias.
+- **Estorno de baixa:** devolve o valor ao saldo do título, cria a movimentação compensatória e mantém a baixa no histórico. A movimentação de uma baixa não é estornada pelo extrato.
+- Baixa e transação do extrato são gravadas atomicamente; títulos sem baixa não alteram saldo. Cancelamento é permitido somente para título aberto sem baixa ativa. Títulos com baixa não são excluídos fisicamente. Quando uma baixa ou cancelamento é recusado, a página do tipo do título (a pagar/receber) mostra o motivo.
 - Anexos, cobrança, comprovante, aprovação e dados bancários são referências informadas pelo usuário. Não há upload de arquivos, processo de aprovação nem conexão de pagamento implementados.
 
 ### Contabilidade
@@ -157,7 +160,10 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
 - Plano de contas hierárquico sintético/analítico, contas por natureza (ativo, passivo, patrimônio líquido, receita e despesa), diário, débitos/créditos, partidas dobradas, livro razão e estornos.
 - Lançamentos efetivados precisam ter no mínimo duas linhas e total de débitos igual ao total de créditos. Grupos sintéticos não recebem partidas.
 - Movimentações liquidadas e transferências geram lançamentos contábeis vinculados atomicamente.
-- Estorno gera lançamento compensatório, preservando o original. Há comando idempotente de backfill para movimentos liquidados históricos.
+- Estorno gera lançamento compensatório com as mesmas contas do original invertidas, preservando o original. Estorno não é estornado, e lançamento gerado por movimentação só é corrigido pela origem. Há comando idempotente de backfill para movimentos liquidados históricos.
+- **Fechamento de período:** o proprietário define em `/accounting` a data até a qual nada é lançado, baixado ou estornado.
+- **Demonstrativos** em `/accounting/statements`: balancete de verificação, DRE e balanço patrimonial por período, derivados do diário.
+- **Regime de caixa:** receita e despesa entram no razão na liquidação ou na baixa; título em aberto não gera lançamento. É diferente do regime de competência dos ERPs — veja [docs/accounting.md](docs/accounting.md).
 - Regras completas: [docs/accounting.md](docs/accounting.md).
 
 ### Conciliação e relatórios
@@ -195,13 +201,13 @@ Os modelos Tortoise estão em `src/fincore/infrastructure/models.py`; migrations
 
 | Modelo | Responsabilidade e vínculos principais |
 |---|---|
-| `Organization`, `User`, `Membership` | Identidade, organização e associação que limita o tenant de cada sessão |
+| `Organization`, `User`, `Membership` | Identidade, organização e associação que limita o tenant de cada sessão; a organização guarda a data de fechamento do período contábil |
 | `FinancialAccount` | Conta financeira BRL, tipo, banco e metadados; saldo é calculado dos movimentos liquidados e saldo inicial |
 | `Category` | Receita/despesa, tipo sintético/analítico, categoria superior e vínculo contábil |
 | `FinancialTransaction` | Movimento do extrato, valor decimal, competência/vencimento, status, conta/categoria, ator da liquidação, idempotência, transferência/estorno |
 | `Counterparty` | Contato de título (fornecedor, cliente ou outro) pertencente à organização |
 | `FinancialTitle` | Título a pagar/receber, contato, conta/categoria, documento, valores/datas, parcela, estado e referências específicas |
-| `TitleSettlement` | Baixa de título com valor aplicado, ajustes, valor líquido, comprovante e referência única à transação gerada |
+| `TitleSettlement` | Baixa de título com valor aplicado, ajustes, valor líquido, comprovante e referência única à transação gerada; quando estornada, guarda data, usuário e a transação compensatória |
 | `LedgerAccount` | Plano contábil, natureza e hierarquia sintética/analítica |
 | `JournalEntry`, `JournalEntryLine` | Cabeçalho e linhas de débito/crédito; efetivação e estorno rastreáveis |
 | `ImportedStatementTransaction` | Linha importada de OFX e identidade externa por conta/FITID |
@@ -385,6 +391,7 @@ src/fincore/
   infrastructure/                 modelos Tortoise e migrations versionadas
   infrastructure/db_roles.py     usuário restrito do banco usado pelo container app
   application/queries.py         consultas de leitura usadas pelas telas e pela API (inclui indicadores do CRM)
+  application/statements.py      balancete, DRE e balanço patrimonial derivados do diário
   application/crm.py             casos de uso do CRM: funil, leads, negociações e atividades
   application/crm_proposals.py   propostas e geração de títulos a receber no aceite
   presentation/web.py            sessão, CSRF, templates, paginação e decorators de login

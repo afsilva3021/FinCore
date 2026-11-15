@@ -1,0 +1,41 @@
+{% extends "finance/layout.html" %}
+{% block title %}Demonstrativos · FinCore{% endblock %}
+{% block module_content %}
+{% set natures = {'asset':'Ativo','liability':'Passivo','equity':'Patrimônio líquido','revenue':'Receita','expense':'Despesa'} %}
+<div class="page-heading transactions-page-heading"><div><span class="eyebrow">CONTABILIDADE · DEMONSTRATIVOS</span><h1>Balancete, DRE e balanço</h1><p>Calculados a partir dos lançamentos efetivados do diário. Regime de caixa: receitas e despesas entram na liquidação.</p></div><div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/accounting">Plano de contas e diário</a></div></div>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<section class="content-card mb-4"><form class="row g-3 align-items-end" method="get" action="/accounting/statements"><div class="col-sm-4"><label class="form-label" for="st-start">De</label><input class="form-control" type="date" id="st-start" name="start" value="{{ start }}" required></div><div class="col-sm-4"><label class="form-label" for="st-end">Até</label><input class="form-control" type="date" id="st-end" name="end" value="{{ end }}" required></div><div class="col-sm-4"><button class="btn btn-primary" type="submit">Aplicar</button></div></form></section>
+{% if statements %}
+{% set tb = statements.trial_balance %}{% set dre = statements.income_statement %}{% set bs = statements.balance_sheet %}
+<article class="panel-card mb-4"><div class="panel-heading"><div><h3>DRE — demonstração do resultado</h3><p>Receitas menos despesas lançadas no período.</p></div></div>
+  <div class="table-responsive"><table class="table align-middle mb-0"><tbody>
+    <tr><th colspan="2">Receitas</th></tr>
+    {% for account, amount in dre.revenues %}<tr><td>{{ account.code }} · {{ account.name }}</td><td class="text-end">R$ {{ amount|brl }}</td></tr>{% else %}<tr><td colspan="2" class="text-secondary">Nenhuma receita no período.</td></tr>{% endfor %}
+    <tr><th>Total de receitas</th><th class="text-end">R$ {{ dre.total_revenue|brl }}</th></tr>
+    <tr><th colspan="2">Despesas</th></tr>
+    {% for account, amount in dre.expenses %}<tr><td>{{ account.code }} · {{ account.name }}</td><td class="text-end">R$ {{ amount|brl }}</td></tr>{% else %}<tr><td colspan="2" class="text-secondary">Nenhuma despesa no período.</td></tr>{% endfor %}
+    <tr><th>Total de despesas</th><th class="text-end">R$ {{ dre.total_expense|brl }}</th></tr>
+    <tr class="table-light"><th>Resultado do período</th><th class="text-end">{% if dre.result < 0 %}− {% endif %}R$ {{ dre.result|abs|brl }}</th></tr>
+  </tbody></table></div>
+</article>
+<article class="panel-card mb-4"><div class="panel-heading"><div><h3>Balanço patrimonial em {{ statements.end.strftime('%d/%m/%Y') }}</h3><p>Ativo = Passivo + Patrimônio líquido + Resultado acumulado.</p></div><span class="badge {{ 'text-bg-success' if bs.is_balanced else 'text-bg-danger' }}">{{ 'Fechado' if bs.is_balanced else 'Diferença no balanço' }}</span></div>
+  <div class="crm-detail-grid">
+    <div class="table-responsive"><table class="table align-middle mb-0"><tbody><tr><th colspan="2">Ativo</th></tr>
+      {% for account, amount in bs.assets %}<tr><td>{{ account.code }} · {{ account.name }}</td><td class="text-end">{% if amount < 0 %}− {% endif %}R$ {{ amount|abs|brl }}</td></tr>{% else %}<tr><td colspan="2" class="text-secondary">Sem saldo.</td></tr>{% endfor %}
+      <tr class="table-light"><th>Total do ativo</th><th class="text-end">R$ {{ bs.total_assets|brl }}</th></tr></tbody></table></div>
+    <div class="table-responsive"><table class="table align-middle mb-0"><tbody><tr><th colspan="2">Passivo</th></tr>
+      {% for account, amount in bs.liabilities %}<tr><td>{{ account.code }} · {{ account.name }}</td><td class="text-end">{% if amount < 0 %}− {% endif %}R$ {{ amount|abs|brl }}</td></tr>{% else %}<tr><td colspan="2" class="text-secondary">Sem saldo.</td></tr>{% endfor %}
+      <tr><th colspan="2">Patrimônio líquido</th></tr>
+      {% for account, amount in bs.equity %}<tr><td>{{ account.code }} · {{ account.name }}</td><td class="text-end">{% if amount < 0 %}− {% endif %}R$ {{ amount|abs|brl }}</td></tr>{% endfor %}
+      <tr><td>Resultado acumulado (receitas − despesas)</td><td class="text-end">{% if bs.accumulated_result < 0 %}− {% endif %}R$ {{ bs.accumulated_result|abs|brl }}</td></tr>
+      <tr class="table-light"><th>Total do passivo e patrimônio</th><th class="text-end">R$ {{ bs.total_liabilities_and_equity|brl }}</th></tr></tbody></table></div>
+  </div>
+</article>
+<article class="panel-card"><div class="panel-heading"><div><h3>Balancete de verificação</h3><p>Saldo anterior, movimento do período e saldo final por conta analítica.</p></div><span class="badge {{ 'text-bg-success' if tb.is_balanced else 'text-bg-danger' }}">{{ 'Débitos = créditos' if tb.is_balanced else 'Débitos ≠ créditos' }}</span></div>
+  {% if tb.rows %}<div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Conta</th><th>Natureza</th><th class="text-end">Saldo anterior</th><th class="text-end">Débitos</th><th class="text-end">Créditos</th><th class="text-end">Saldo final</th></tr></thead><tbody>
+    {% for row in tb.rows %}<tr><td>{{ row.account.code }} · {{ row.account.name }}</td><td>{{ natures.get(row.account_type) }}</td><td class="text-end">{% if row.opening < 0 %}− {% endif %}{{ row.opening|abs|brl }}</td><td class="text-end">{{ row.debit|brl }}</td><td class="text-end">{{ row.credit|brl }}</td><td class="text-end">{% if row.closing < 0 %}− {% endif %}{{ row.closing|abs|brl }}</td></tr>{% endfor %}
+    </tbody><tfoot><tr><th colspan="3" class="text-end">Totais do período</th><th class="text-end">{{ tb.total_debit|brl }}</th><th class="text-end">{{ tb.total_credit|brl }}</th><th></th></tr></tfoot></table></div>
+  {% else %}<div class="finance-empty"><span>▧</span><strong>Sem lançamentos efetivados até esta data</strong></div>{% endif %}
+</article>
+{% endif %}
+{% endblock %}

@@ -113,7 +113,7 @@ Consulte `README.md`, `docs/progress.md`, `docs/api.md` e os testes antes de dec
 - Páginas server-rendered Bootstrap para visão geral, contas, categorias, transações, títulos a pagar/receber, contabilidade, conciliação, relatórios e simuladores.
 - Contas financeiras, categorias com nós sintéticos/analíticos, receitas/despesas, transferências, liquidação, estornos, extrato e saldos derivados.
 - Títulos independentes (`FinancialTitle`), contatos (`Counterparty`) e baixas (`TitleSettlement`); cadastro não movimenta caixa. Baixa grava transação vinculada e diário contábil atomicamente. Títulos não são transações.
-- Plano contábil, diário de partidas dobradas, livro razão, rascunho/efetivação/estorno e backfill idempotente.
+- Plano contábil, diário de partidas dobradas, livro razão, rascunho/efetivação/estorno e backfill idempotente. Regime de caixa. Estorno espelha as contas do lançamento original; baixa lança juros/multa, descontos e tarifas em contas próprias; estorno de baixa (`reverse_settlement`) reabre o título; fechamento de período (`Organization.books_closed_until`) bloqueia lançamentos retroativos; balancete, DRE e balanço em `/accounting/statements`. Regras em `docs/accounting.md`.
 - Importação OFX 1.x SGML e conciliação manual com deduplicação e auditoria. CNAB tem somente protocolo de adapter sem layout bancário implementado.
 - Exportação de relatório CSV/PDF e simuladores locais sem integrações externas reais.
 - CRM: leads com qualificação e conversão, funil com etapas configuráveis, negociações com histórico, atividades, propostas e painel comercial. O aceite de proposta gera títulos a receber de forma atômica e idempotente; não movimenta caixa. Regras em `docs/crm.md`. O CRM não envia e-mail nem mensagens.

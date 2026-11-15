@@ -182,11 +182,31 @@ async def unsettled_titles(organization: Organization, title_type: str) -> list[
 
 
 async def title_ids_with_settlements(title_ids: Iterable[UUID]) -> set[UUID]:
+    """Títulos com baixa ativa (baixas estornadas não contam)."""
     return set(
-        await TitleSettlement.filter(title_id__in=list(title_ids)).values_list(
+        await TitleSettlement.filter(title_id__in=list(title_ids), reversed_at=None).values_list(
             "title_id", flat=True
         )
     )
+
+
+async def active_settlements_by_title(
+    title_ids: Iterable[UUID],
+) -> dict[UUID, list[TitleSettlement]]:
+    """Baixas ainda não estornadas de cada título, numa só consulta."""
+    grouped: dict[UUID, list[TitleSettlement]] = {}
+    for item in await TitleSettlement.filter(
+        title_id__in=list(title_ids), reversed_at=None
+    ).order_by("paid_on", "created_at"):
+        grouped.setdefault(item.title_id, []).append(item)
+    return grouped
+
+
+async def organization_books_closed_until(organization: Organization):
+    rows = await Organization.filter(id=organization.id).values_list(
+        "books_closed_until", flat=True
+    )
+    return rows[0] if rows else None
 
 
 # --- Contabilidade --------------------------------------------------------------------

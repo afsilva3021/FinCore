@@ -11,6 +11,12 @@ class Organization(Model):
     name = fields.CharField(max_length=160)
     created_at = fields.DatetimeField(auto_now_add=True)
     is_active = fields.BooleanField(default=True)
+    # Trava de período: nenhum lançamento contábil com data até este dia (inclusive).
+    books_closed_until = fields.DateField(null=True)
+    books_closed_by = fields.ForeignKeyField(
+        "models.User", related_name="closed_periods", null=True, on_delete=fields.RESTRICT
+    )
+    books_closed_at = fields.DatetimeField(null=True)
 
 
 class User(Model):
@@ -255,6 +261,21 @@ class TitleSettlement(Model):
     proof_reference = fields.CharField(max_length=512, null=True)
     notes = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
+    # Estorno da baixa: a baixa fica no histórico, deixa de abater o saldo do título e
+    # aponta para a movimentação compensatória.
+    reversed_at = fields.DatetimeField(null=True)
+    reversed_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="reversed_title_settlements",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
+    reversal_transaction = fields.OneToOneField(
+        "models.FinancialTransaction",
+        related_name="reversed_title_settlement",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
 
 
 class LedgerAccount(Model):

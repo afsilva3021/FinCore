@@ -227,3 +227,21 @@ Riscos conhecidos, não alterados nesta entrega:
 - Não há limite de requisições por usuário fora do login.
 - Listas de seleção de contatos nas telas do CRM não são paginadas.
 - Abrir uma tela do CRM pela primeira vez grava as etapas padrão do funil, mesmo com perfil somente leitura.
+
+## Regras financeiras e contábeis frente a ERPs (2026-11-15)
+
+- [x] Estorno de movimentação espelha as contas do lançamento original e fica ligado a ele (testado: receita com categoria volta a zero; transferência estornada).
+- [x] Baixa de título lança principal, juros/multa, desconto e tarifa em contas próprias (a receber e a pagar), com o razão do banco igual ao saldo financeiro.
+- [x] Estorno de baixa: atômico, idempotente, mantém histórico, recalcula a situação do título; páginas e `POST /api/v1/titles/{id}/settlements/{settlement_id}/reverse`.
+- [x] Bloqueios: estornar pelo extrato a movimentação de uma baixa; estornar um estorno; estornar no diário um lançamento gerado por movimentação.
+- [x] Fechamento de período: recusa movimentação, baixa, efetivação de rascunho e estorno com data fechada sem deixar nada pela metade; só o proprietário altera (perfil financeiro recebe `403`).
+- [x] Balancete, DRE e balanço patrimonial conferidos contra valores de referência; balanço fecha e o ativo bate com o saldo das contas financeiras.
+- [x] Migrations `0021` (campos) e `0022` (`CHECK`); aplicadas no banco de teste; `makemigrations` sem diferenças.
+- [x] Isolamento: organização B não estorna baixa de A (HTML e API).
+- [x] Suíte completa: 221 testes passando; ruff, formatação e `openapi-spec-validator` limpos.
+- [ ] Telas novas (demonstrativos, fechamento, lista de baixas) testadas por HTTP, mas não conferidas visualmente no navegador.
+- [ ] Migrations `0021`/`0022` e o código novo não estão no container em execução; rode `docker compose -f compose.yaml -f compose.dev.yaml up -d --build`.
+
+Diferenças em relação a ERPs que continuam, por decisão ou por escopo: regime de caixa (sem contas a receber/pagar no razão), sem impostos, sem multimoeda, sem encerramento de exercício, lançamento manual pode usar a conta contábil de um banco, baixas antigas continuam lançadas pelo valor líquido.
+
+Próximo passo sugerido: decidir se o FinCore deve adotar regime de competência para títulos.

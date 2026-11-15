@@ -23,7 +23,7 @@ from fincore.application.crm import create_activity, create_deal, create_lead
 from fincore.application.crm_proposals import create_proposal, send_proposal
 from fincore.application.finance import create_account, create_movement
 from fincore.application.identity import register_user
-from fincore.application.titles import create_titles
+from fincore.application.titles import create_titles, settle_title
 from fincore.config.database import TORTOISE_ORM
 from fincore.infrastructure.models import (
     Counterparty,
@@ -40,7 +40,9 @@ from fincore.infrastructure.models import (
     JournalEntryLine,
     LedgerAccount,
     Membership,
+    Organization,
     ReconciliationMatch,
+    TitleSettlement,
 )
 from fincore.presentation.web import COOKIE_AUTH, COOKIE_CSRF, csrf_serializer, serializer
 
@@ -108,6 +110,16 @@ async def _seed_organization_a():
         payment_terms="cash",
         installment_count=1,
     )
+    settlement = await settle_title(
+        organization=organization,
+        user=user,
+        title_id=title.id,
+        operation_key=uuid4(),
+        amount_applied=Decimal("30.00"),
+        paid_on=date.today(),
+        account_id=account.id,
+        payment_method="pix",
+    )
     contact = await save_counterparty(
         organization=organization,
         person_type="company",
@@ -158,6 +170,7 @@ async def _seed_organization_a():
     )
     await send_proposal(organization=organization, proposal_id=proposal.id)
     return {
+        "settlement": settlement,
         "lead": lead,
         "deal": deal,
         "stage": await deal.stage,
@@ -196,6 +209,14 @@ async def _snapshot(seed: dict) -> dict:
         "matches": await ReconciliationMatch.filter(
             statement_transaction__organization=organization
         ).count(),
+        "settlements": await TitleSettlement.filter(organization=organization).values(
+            "id", "reversed_at"
+        ),
+        "closed_until": (
+            await Organization.filter(id=organization.id).values_list(
+                "books_closed_until", flat=True
+            )
+        )[0],
         "leads": await CrmLead.filter(organization=organization).values("id", "status"),
         "deals": await CrmDeal.filter(organization=organization).values(
             "id", "status", "stage_id", "title"
@@ -280,6 +301,18 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
             f"/api/v1/transactions/{a['settled_movement']}/reverse",
             api,
             json.dumps({"operation_key": str(uuid4()), "reversed_at": today}),
+        ),
+        (
+            "post",
+            f"/titles/{a['title']}/settlements/{a['settlement']}/reverse",
+            form,
+            f"operation_key={uuid4()}",
+        ),
+        (
+            "post",
+            f"/api/v1/titles/{a['title']}/settlements/{a['settlement']}/reverse",
+            api,
+            json.dumps({"operation_key": str(uuid4())}),
         ),
         ("get", f"/crm/leads/{a['lead']}/convert", form, None),
         ("post", f"/crm/leads/{a['lead']}/convert", form, "create_deal=true"),

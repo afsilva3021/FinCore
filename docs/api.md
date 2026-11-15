@@ -12,10 +12,12 @@ As páginas HTML são a interface principal do FinCore. Os formulários fazem va
 - `GET /categories`, `POST /categories` — categorias de receita/despesa, grupos sintéticos e subcategorias analíticas.
 - `GET /transactions`, `POST /transactions` — receitas, despesas e transferências.
 - `POST /transactions/:transaction_id/settle` — liquida movimentação em aberto.
-- `POST /transactions/:transaction_id/reverse` — cria movimento compensatório e preserva o original.
+- `POST /transactions/:transaction_id/reverse` — cria movimento compensatório e preserva o original; recusa a movimentação de uma baixa de título (estorne a baixa) e o estorno de um estorno.
 - `GET /accounting` — plano de contas e diário.
 - `POST /accounting/accounts`, `POST /accounting/journals` — contas contábeis e rascunhos.
-- `POST /accounting/journals/:entry_id/update`, `/post`, `/reverse` — altera rascunhos, efetiva ou cria estorno.
+- `POST /accounting/journals/:entry_id/update`, `/post`, `/reverse` — altera rascunhos, efetiva ou cria estorno. Lançamento gerado por movimentação e lançamento de estorno não aceitam estorno aqui.
+- `GET /accounting/statements?start=AAAA-MM-DD&end=AAAA-MM-DD` — balancete de verificação, DRE e balanço patrimonial.
+- `POST /accounting/period-lock` — `closed_until` (vazio reabre); só o proprietário, demais perfis recebem `403`.
 - `GET /static/*` — CSS e JavaScript da interface.
 - `GET /contacts`, `/customers`, `/suppliers` — contatos, clientes ou fornecedores; filtros `role` e `status` são aplicados na tela.
 - `GET /contacts/:contact_id/edit` — formulário lateral de edição do contato autenticado.
@@ -57,7 +59,8 @@ As rotas JSON usam o mesmo cookie de sessão assinado das páginas. Listas sempr
 | GET | `/api/v1/titles/{id}` | UUID do título | Título com `settlements[]` ou 404 |
 | POST | `/api/v1/titles` | JSON `{operation_key,type,description,counterparty_name,account_id,amount,issue_date,due_date,payment_method,installments?,category_id?,document_number?,notes?}` | `201 {items:[...]}`; reenvio com a mesma chave devolve os mesmos títulos; chave de outra organização = `409` |
 | POST | `/api/v1/titles/{id}/settlements` | JSON `{operation_key,amount_applied,paid_on,account_id,payment_method,discount?,interest?,fine?,fees?}` | `201` com a baixa; reenvio idempotente; regra violada = `400` com o motivo |
-| POST | `/api/v1/titles/{id}/cancel` | sem payload | `200` com o título cancelado; com baixa ou já liquidado = `409` |
+| POST | `/api/v1/titles/{id}/settlements/{settlement_id}/reverse` | JSON `{operation_key,reversed_on?}` | `200` com a baixa (`reversed_at`, `reversal_transaction_id`); devolve o saldo ao título e cria movimentação compensatória; repetir não tem efeito; período fechado = `409` |
+| POST | `/api/v1/titles/{id}/cancel` | sem payload | `200` com o título cancelado; com baixa ativa ou já liquidado = `409` |
 | GET | `/api/v1/crm/summary` | nenhum | Indicadores: leads por situação e conversão, negociações abertas, previsão ponderada, taxa de ganho, ciclo médio, paradas, atividades pendentes/atrasadas |
 | GET | `/api/v1/crm/stages` | nenhum | `{items:[{id,name,position,win_probability,is_active}]}` |
 | GET | `/api/v1/crm/leads` | `limit`, `offset`, `status=new\|contacted\|qualified\|disqualified\|converted\|active` | `{items:[lead],limit,offset,total}` |
@@ -142,7 +145,8 @@ Títulos são separados de `/transactions`. As rotas abaixo usam sessão autenti
 | GET | `/receivables` | Lista títulos a receber com os mesmos filtros |
 | POST | `/receivables` | Cadastra título a receber e suas parcelas |
 | POST | `/titles/{id}/settlements` | Registra baixa parcial ou final, ajustes e comprovante; cria uma movimentação vinculada |
-| POST | `/titles/{id}/cancel` | Cancela título em aberto que não tenha baixas |
+| POST | `/titles/{id}/settlements/{settlement_id}/reverse` | Estorna a baixa (`operation_key`): reabre o saldo do título e compensa caixa e razão |
+| POST | `/titles/{id}/cancel` | Cancela título em aberto que não tenha baixas ativas |
 
 O cadastro recebe contraparte, descrição, valor total, emissão/vencimento inicial, conta, categoria opcional, documento, condição/parcelas, forma de pagamento, centro de custo/projeto e referências opcionais específicas do tipo. Cada baixa requer chave de operação, valor aplicado, data, conta e forma; desconto, juros, multa, tarifas, comprovante e observações são opcionais. O saldo é derivado das baixas. Referências de anexo, cobrança e comprovante não carregam nem armazenam arquivos. A API JSON equivalente está em `/api/v1/titles`.
 

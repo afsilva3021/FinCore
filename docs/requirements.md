@@ -56,3 +56,17 @@ Critérios de aceite:
 - Indicadores batem com valores de referência calculados no teste e não misturam organizações.
 - Perfil somente leitura consulta, mas não altera; dados de outra organização não são lidos nem alterados por ID.
 - O CRM não envia e-mail nem mensagens; qualquer envio é simulação identificada.
+
+## Regras contábeis no padrão de ERP
+
+- Como financeiro, estorno uma baixa lançada por engano e o título volta a ficar em aberto, com caixa e razão compensados.
+- Como contador, vejo juros, multas, descontos e tarifas em contas próprias, separados da receita ou despesa principal.
+- Como proprietário, fecho um período para que ninguém lance, baixe ou estorne com data retroativa.
+- Como contador, consulto balancete de verificação, DRE e balanço patrimonial por período.
+
+Critérios de aceite:
+
+- Estorno de movimentação zera exatamente as contas do lançamento original.
+- Estorno de baixa é atômico e idempotente; a baixa fica no histórico; a movimentação de uma baixa não é estornada pelo extrato.
+- Período fechado recusa todo lançamento com data até o fechamento, sem deixar operação pela metade; só o proprietário fecha e reabre.
+- No balanço, Ativo = Passivo + Patrimônio líquido + Resultado acumulado; o ativo das contas financeiras é igual ao saldo derivado das transações.

@@ -39,10 +39,12 @@ from fincore.application.members import (
 from fincore.application.queries import (
     active_accounts,
     active_categories,
+    active_settlements_by_title,
     analytic_categories,
     get_title,
     journal_entries_query,
     journal_lines_by_entry,
+    organization_books_closed_until,
     reversed_entry_ids,
     session_membership,
     synthetic_root_categories,
@@ -523,6 +525,7 @@ async def _render_title_register(
     overdue_titles = [item for item in all_titles if item.due_date < today]
     balances = await title_balances(titles)
     settlement_ids = await title_ids_with_settlements(item.id for item in titles)
+    settlements = await active_settlements_by_title(item.id for item in titles)
     accounts = await active_accounts(organization)
     categories = await analytic_categories(organization, "expense" if is_payable else "income")
     return _page(
@@ -558,6 +561,10 @@ async def _render_title_register(
         },
         balances=balances,
         settlement_ids=settlement_ids,
+        settlements=settlements,
+        reversal_keys={
+            str(item.id): str(uuid4()) for rows in settlements.values() for item in rows
+        },
         operation_keys={str(item.id): str(uuid4()) for item in titles},
         title_count=len(titles),
         open_count=len(all_titles),
@@ -610,6 +617,7 @@ async def _render_accounting(
         entries=entry_rows,
         pagination=pagination,
         reversed_ids=reversals,
+        books_closed_until=await organization_books_closed_until(organization),
         error=error,
         open_drawer=open_drawer,
     )

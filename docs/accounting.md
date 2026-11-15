@@ -38,3 +38,49 @@ O usuário define códigos e contas da própria organização. O sistema não de
 - A conta superior precisa pertencer à organização e ter a mesma natureza contábil. Apenas grupos sintéticos podem ser selecionados como superiores.
 - Categorias financeiras também aceitam grupos sintéticos e subcategorias analíticas. Uma subcategoria precisa pertencer a um grupo sintético do mesmo tipo (receita ou despesa); movimentações só aceitam categorias analíticas.
 - Categorias analíticas mantêm o vínculo com suas contas de receita/despesa no razão. Os grupos sintéticos agregam os saldos contábeis das contas filhas.
+
+## Regime contábil
+
+O FinCore usa **regime de caixa**: receita e despesa entram no razão quando a movimentação é liquidada ou o título recebe baixa. Cadastrar um título não gera lançamento. ERPs como ERPNext e Odoo usam regime de competência (a fatura já lança contas a receber/pagar); essa diferença é deliberada e está registrada em `docs/decisions.md`. Os títulos em aberto aparecem em Contas a pagar/receber, não no balanço.
+
+## Baixa de título: uma conta para cada natureza
+
+A baixa gera um único lançamento com o principal, os encargos e os abatimentos em contas separadas. O banco movimenta o valor líquido.
+
+| | Débito | Crédito |
+|---|---|---|
+| **A receber** | Banco (líquido) · Descontos concedidos · Tarifas bancárias | Receita da categoria (valor aplicado) · Receitas financeiras (juros + multa) |
+| **A pagar** | Despesa da categoria (valor aplicado) · Despesas financeiras (juros + multa) · Tarifas bancárias | Banco (líquido) · Descontos obtidos |
+
+Contas de sistema criadas no primeiro uso: `SYS-FIN-REV`, `SYS-FIN-EXP`, `SYS-DISC-GIVEN`, `SYS-DISC-RECV` e `SYS-BANK-FEES`. Baixas anteriores a esta regra continuam como foram lançadas (valor líquido inteiro na conta da categoria); lançamentos efetivados não são reescritos.
+
+## Estornos
+
+- **Estorno espelhado:** o estorno de uma movimentação inverte as mesmas contas do lançamento original e fica ligado a ele (`reversal_of`). Antes, o estorno de uma receita debitava "Despesas sem categoria", deixando a receita da categoria inflada.
+- **Estorno de baixa:** a movimentação gerada por uma baixa só é estornada pelo estorno da baixa (em Contas a pagar/receber ou `POST /api/v1/titles/{id}/settlements/{settlement_id}/reverse`). Numa transação: cria a movimentação compensatória com lançamento espelhado, marca a baixa como estornada (ela permanece no histórico) e devolve o valor ao saldo do título, que volta a "parcial" ou "em aberto". Repetir o estorno não tem efeito.
+- **Estorno não é estornado:** nem movimentação nem lançamento de estorno aceitam novo estorno; corrige-se com um lançamento novo.
+- **Lançamento gerado por movimentação** não é estornado direto no diário: estornar só o razão deixaria o saldo da conta financeira diferente do saldo contábil. Estorna-se a movimentação ou a baixa de origem.
+- Título cuja única baixa foi estornada pode ser cancelado; a baixa estornada continua registrada.
+
+## Fechamento de período
+
+O proprietário define em `/accounting` a data até a qual o período está fechado (inclusive). Com o período fechado, nenhum lançamento é efetivado com data até esse dia — manual, de movimentação, de baixa ou de estorno; a operação inteira é recusada e nada fica pela metade. Guarda-se quem alterou e quando. Reabrir é limpar a data.
+
+Exceção controlada: liquidar hoje uma movimentação em aberto cuja competência caiu em período fechado lança na data da liquidação, para não reabrir o período.
+
+## Demonstrativos (`/accounting/statements`)
+
+Calculados das linhas de lançamentos efetivados; não há saldo gravado.
+
+- **Balancete de verificação:** por conta analítica, saldo anterior, débitos e créditos do período e saldo final; o total de débitos deve ser igual ao de créditos.
+- **DRE:** movimento do período das contas de receita menos o das contas de despesa.
+- **Balanço patrimonial** na data final: Ativo = Passivo + Patrimônio líquido + Resultado acumulado. O resultado acumulado (receitas − despesas) aparece como linha própria; não há lançamento de encerramento de exercício.
+
+## Diferenças conhecidas em relação a ERPs
+
+- Regime de caixa, sem contas a receber/pagar no razão e sem provisões.
+- Sem impostos, retenções, centros de custo contábeis, multimoeda ou ativo imobilizado.
+- Sem encerramento de exercício com transferência do resultado para lucros acumulados.
+- Lançamentos manuais podem usar a conta contábil de uma conta financeira; isso altera o razão sem criar movimentação, e o saldo financeiro deixa de bater com o contábil. Use movimentações para tudo que envolve banco ou caixa.
+- A data contábil de uma movimentação é a data de competência informada; não há data de liquidação separada no lançamento, exceto no caso de período fechado.
+- Conciliação exige data e valor idênticos, sem tolerância.

@@ -59,6 +59,16 @@ def ensure_can_settle(status: str) -> None:
         raise ValueError("Este título já está liquidado.")
 
 
+def ensure_can_reverse_settlement(title_status: str) -> None:
+    if title_status == "cancelled":
+        raise ValueError("Títulos cancelados não têm baixas a estornar.")
+
+
+def status_after_settlement_reversal(has_active_settlements: bool) -> str:
+    """Estornada uma baixa, o título volta a parcial (se restam baixas) ou em aberto."""
+    return "partial" if has_active_settlements else "open"
+
+
 def ensure_can_cancel(status: str, has_settlements: bool) -> None:
     if status != "open":
         raise ValueError("Somente títulos em aberto sem baixas podem ser cancelados.")

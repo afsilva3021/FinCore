@@ -146,6 +146,8 @@ components:
         payment_method: {type: string}
         account_id: {type: string, format: uuid}
         financial_transaction_id: {type: string, format: uuid}
+        reversed_at: {type: [string, "null"], format: date-time, description: Preenchido quando a baixa foi estornada; ela deixa de abater o saldo do título.}
+        reversal_transaction_id: {type: [string, "null"], format: uuid}
     AmountOrZero:
       type: string
       pattern: '^\d+(\.\d{1,2})?$'
@@ -417,6 +419,36 @@ paths:
       responses:
         "201":
           description: Baixa registrada (ou a mesma, num reenvio com a mesma operation_key).
+          content: {application/json: {schema: {$ref: '#/components/schemas/Settlement'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/titles/{title_id}/settlements/{settlement_id}/reverse:
+    post:
+      summary: Estorna uma baixa e reabre o saldo do título
+      description: |
+        Numa transação: cria a movimentação compensatória com lançamento contábil
+        espelhado, marca a baixa como estornada (ela continua no histórico) e recalcula
+        a situação do título. Repetir o estorno não tem efeito.
+      security: [{session: [], csrf: []}]
+      parameters:
+        - {$ref: '#/components/parameters/TitleId'}
+        - {name: settlement_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operation_key]
+              properties:
+                operation_key: {type: string, format: uuid}
+                reversed_on: {type: string, format: date, description: Data do estorno; padrão é hoje.}
+      responses:
+        "200":
+          description: Baixa estornada.
           content: {application/json: {schema: {$ref: '#/components/schemas/Settlement'}}}
         "400": {$ref: '#/components/responses/Invalid'}
         "401": {$ref: '#/components/responses/Unauthenticated'}
