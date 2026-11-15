@@ -1,7 +1,8 @@
 """Dados de demonstração — SOMENTE para desenvolvimento, screenshots e demo pública.
 
 Cria uma organização fictícia, claramente identificada no nome, com contas, categorias,
-movimentos de três meses, títulos a pagar/receber e uma baixa. Nunca roda sozinho: o
+movimentos de três meses, títulos a pagar/receber, uma baixa e um funil de CRM (leads,
+negociações, atividades e uma proposta aceita). Nunca roda sozinho: o
 comando exige FINCORE_ALLOW_DEMO_SEED=1 e recusa se o e-mail de demonstração já existir.
 """
 
@@ -10,6 +11,16 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fincore.application.counterparties import save_counterparty
+from fincore.application.crm import (
+    convert_lead,
+    create_activity,
+    create_deal,
+    create_lead,
+    lose_deal,
+    move_deal,
+    update_lead,
+)
+from fincore.application.crm_proposals import accept_proposal, create_proposal, send_proposal
 from fincore.application.finance import (
     create_account,
     create_category,
@@ -18,6 +29,7 @@ from fincore.application.finance import (
 )
 from fincore.application.identity import register_user
 from fincore.application.members import add_member
+from fincore.application.queries import crm_stages
 from fincore.application.titles import create_titles, settle_title
 from fincore.infrastructure.models import Membership, User
 
@@ -143,4 +155,133 @@ async def seed_demo(today: date | None = None) -> str:
         payment_terms="cash",
         installment_count=1,
     )
+    await _seed_crm(organization, owner, bank, categories["Encomendas"], today)
     return DEMO_EMAIL
+
+
+async def _seed_crm(organization, owner, bank, category, today: date) -> None:
+    """Funil fictício: leads em situações diferentes, negociações e uma proposta aceita."""
+    await create_lead(
+        organization=organization,
+        user=owner,
+        name="Carla Nunes",
+        company_name="Café Exemplo",
+        email="carla@cafe.example",
+        source="referral",
+        estimated_value=Decimal("1800.00"),
+    )
+    qualified = await create_lead(
+        organization=organization,
+        user=owner,
+        name="Diego Prado",
+        company_name="Hotel Exemplo",
+        email="diego@hotel.example",
+        phone="(11) 4000-0000",
+        source="event",
+        estimated_value=Decimal("6500.00"),
+    )
+    await update_lead(
+        organization=organization,
+        lead_id=qualified.id,
+        status="qualified",
+        has_need=True,
+        has_budget=True,
+        has_authority=False,
+        has_timeline=True,
+    )
+    converted = await create_lead(
+        organization=organization,
+        user=owner,
+        name="Elisa Rocha",
+        company_name="Buffet Exemplo",
+        email="elisa@buffet.example",
+        source="website",
+        estimated_value=Decimal("4200.00"),
+    )
+    _, _, buffet_deal = await convert_lead(
+        organization=organization,
+        user=owner,
+        lead_id=converted.id,
+        person_type="company",
+        deal_title="Fornecimento para eventos",
+        expected_close_date=today + timedelta(days=20),
+    )
+    stages = await crm_stages(organization)
+    await move_deal(
+        organization=organization, user=owner, deal_id=buffet_deal.id, stage_id=stages[3].id
+    )
+    await create_activity(
+        organization=organization,
+        user=owner,
+        activity_type="call",
+        subject="Confirmar cardápio com a Elisa",
+        due_date=today + timedelta(days=2),
+        deal_id=buffet_deal.id,
+    )
+    await create_activity(
+        organization=organization,
+        user=owner,
+        activity_type="task",
+        subject="Retornar contato do Hotel Exemplo",
+        due_date=today - timedelta(days=1),
+        lead_id=qualified.id,
+    )
+
+    office = await save_counterparty(
+        organization=organization,
+        person_type="company",
+        name="Coworking Exemplo Ltda",
+        is_customer=True,
+        city="São Paulo",
+        state="SP",
+    )
+    coffee_deal = await create_deal(
+        organization=organization,
+        user=owner,
+        counterparty_id=office.id,
+        title="Coffee break semanal",
+        amount=Decimal("3000.00"),
+        stage_id=stages[2].id,
+        expected_close_date=today + timedelta(days=10),
+    )
+    proposal = await create_proposal(
+        organization=organization,
+        user=owner,
+        deal_id=coffee_deal.id,
+        items=[
+            ("Coffee break para 20 pessoas", Decimal("4"), Decimal("720.00")),
+            ("Entrega", Decimal("4"), Decimal("45.00")),
+        ],
+        discount=Decimal("60.00"),
+        valid_until=today + timedelta(days=15),
+        notes="Entregas às quartas-feiras.",
+    )
+    await send_proposal(organization=organization, proposal_id=proposal.id)
+    await accept_proposal(
+        organization=organization,
+        user=owner,
+        proposal_id=proposal.id,
+        account_id=bank.id,
+        category_id=category.id,
+        payment_method="boleto",
+        first_due_date=today + timedelta(days=30),
+        installment_count=3,
+    )
+    await create_deal(
+        organization=organization,
+        user=owner,
+        counterparty_id=office.id,
+        title="Encomenda de fim de ano",
+        amount=Decimal("1500.00"),
+        stage_id=stages[0].id,
+    )
+    lost = await create_deal(
+        organization=organization,
+        user=owner,
+        counterparty_id=office.id,
+        title="Pães para cantina",
+        amount=Decimal("900.00"),
+    )
+    await lose_deal(
+        organization=organization, user=owner, deal_id=lost.id, reason="Preço acima do orçamento"
+    )

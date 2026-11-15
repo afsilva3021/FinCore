@@ -58,8 +58,31 @@ As rotas JSON usam o mesmo cookie de sessão assinado das páginas. Listas sempr
 | POST | `/api/v1/titles` | JSON `{operation_key,type,description,counterparty_name,account_id,amount,issue_date,due_date,payment_method,installments?,category_id?,document_number?,notes?}` | `201 {items:[...]}`; reenvio com a mesma chave devolve os mesmos títulos; chave de outra organização = `409` |
 | POST | `/api/v1/titles/{id}/settlements` | JSON `{operation_key,amount_applied,paid_on,account_id,payment_method,discount?,interest?,fine?,fees?}` | `201` com a baixa; reenvio idempotente; regra violada = `400` com o motivo |
 | POST | `/api/v1/titles/{id}/cancel` | sem payload | `200` com o título cancelado; com baixa ou já liquidado = `409` |
+| GET | `/api/v1/crm/summary` | nenhum | Indicadores: leads por situação e conversão, negociações abertas, previsão ponderada, taxa de ganho, ciclo médio, paradas, atividades pendentes/atrasadas |
+| GET | `/api/v1/crm/stages` | nenhum | `{items:[{id,name,position,win_probability,is_active}]}` |
+| GET | `/api/v1/crm/leads` | `limit`, `offset`, `status=new\|contacted\|qualified\|disqualified\|converted\|active` | `{items:[lead],limit,offset,total}` |
+| POST | `/api/v1/crm/leads` | JSON `{operation_key,name,company_name?,email?,phone?,source?,estimated_value?,notes?}` | `201` com o lead; reenvio com a mesma chave devolve o mesmo lead |
+| GET | `/api/v1/crm/leads/{id}` | UUID do lead | Lead ou `404` |
+| POST | `/api/v1/crm/leads/{id}/convert` | JSON `{counterparty_id?,person_type?,tax_id?,create_deal?,deal_title?,deal_amount?,stage_id?,expected_close_date?}` | `201 {lead,counterparty_id,deal}`; já convertido ou contato duplicado = `409` |
+| GET | `/api/v1/crm/deals` | `limit`, `offset`, `status=open\|won\|lost` | `{items:[negociação],limit,offset,total}` |
+| POST | `/api/v1/crm/deals` | JSON `{operation_key,counterparty_id,title,amount?,stage_id?,expected_close_date?,notes?}` | `201` com a negociação; reenvio idempotente |
+| GET | `/api/v1/crm/deals/{id}` | UUID da negociação | Negociação ou `404` |
+| POST | `/api/v1/crm/deals/{id}/stage` | JSON `{stage_id}` | `200`; negociação encerrada = `409` |
+| POST | `/api/v1/crm/deals/{id}/win` | sem payload | `200` (repetir numa negociação ganha devolve a mesma) |
+| POST | `/api/v1/crm/deals/{id}/lose` | JSON `{lost_reason}` | `200`; sem motivo = `400` |
+| GET | `/api/v1/crm/activities` | `limit`, `offset`, `status=pending\|done\|all` | `{items:[atividade],limit,offset,total}` |
+| POST | `/api/v1/crm/activities` | JSON `{type,subject,due_date?,notes?,done?}` e exatamente um de `lead_id`, `deal_id`, `counterparty_id` | `201` com a atividade |
+| POST | `/api/v1/crm/activities/{id}/complete` | sem payload | `200` com `done_at` |
+| GET | `/api/v1/crm/proposals` | `limit`, `offset`, `status=draft\|sent\|accepted\|rejected` | `{items:[proposta com total e expired],limit,offset,total}` |
+| POST | `/api/v1/crm/deals/{id}/proposals` | JSON `{operation_key,items:[{description,quantity?,unit_price}],valid_until,discount?,notes?}` | `201` com a proposta em rascunho, `items[]` e `titles[]` vazio |
+| GET | `/api/v1/crm/proposals/{id}` | UUID da proposta | Proposta com `items[]` e `titles[]` |
+| POST | `/api/v1/crm/proposals/{id}/send` | sem payload | `200`; só registra a apresentação, nada é enviado |
+| POST | `/api/v1/crm/proposals/{id}/reject` | JSON `{reason?}` | `200` |
+| POST | `/api/v1/crm/proposals/{id}/accept` | JSON `{operation_key,account_id,payment_method,first_due_date,installments?,category_id?}` | `201` com `titles[]` (títulos a receber gerados); reenvio devolve os mesmos; proposta não enviada, vencida ou recusada = `409` |
 
-A especificação OpenAPI 3.1 dos endpoints de títulos e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
+No CRM, `quantity` é string decimal com até três casas (`"1.5"`); valores monetários seguem a regra geral (`"250.00"`). O aceite de proposta não movimenta caixa: gera títulos, que são baixados por `/api/v1/titles/{id}/settlements`. Regras em [crm.md](crm.md).
+
+A especificação OpenAPI 3.1 dos endpoints de sessão, de títulos e do CRM está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
 
 ### Sessão, CSRF e escrita
 
@@ -101,7 +124,7 @@ A interface principal é renderizada no servidor e requer sessão de usuário; f
 | POST | `/members` | Adiciona membro: `full_name`, `email`, `password` (inicial; ignorada se o e-mail já tem conta), `role` (`owner`, `finance`, `viewer`) | Redireciona com mensagem; `400` com motivo |
 | POST | `/members/:membership_id` | `action=role` + `role`, `action=deactivate` ou `action=activate` | Redireciona; `400` ao tentar remover o último proprietário |
 | GET | `/integrations` | Página dos contratos demonstrativos | Página HTML |
-| POST | `/integrations/simulate` | Executa simulador Pix, boleto, cartão, webhook ou Open Finance | Resultado fictício em HTML |
+| POST | `/integrations/simulate` | Executa simulador Pix, boleto, cartão, webhook, Open Finance, e-mail ou WhatsApp do CRM | Resultado fictício em HTML; nada é enviado |
 
 Limites do importador: não processa OFX 2.x XML, múltiplas contas por arquivo, conversão de moeda, nem arquivos binários multipart. O arquivo deve ser associado explicitamente a uma conta; todos os valores devem ser BRL.
 
@@ -121,7 +144,30 @@ Títulos são separados de `/transactions`. As rotas abaixo usam sessão autenti
 | POST | `/titles/{id}/settlements` | Registra baixa parcial ou final, ajustes e comprovante; cria uma movimentação vinculada |
 | POST | `/titles/{id}/cancel` | Cancela título em aberto que não tenha baixas |
 
-O cadastro recebe contraparte, descrição, valor total, emissão/vencimento inicial, conta, categoria opcional, documento, condição/parcelas, forma de pagamento, centro de custo/projeto e referências opcionais específicas do tipo. Cada baixa requer chave de operação, valor aplicado, data, conta e forma; desconto, juros, multa, tarifas, comprovante e observações são opcionais. O saldo é derivado das baixas. Referências de anexo, cobrança e comprovante não carregam nem armazenam arquivos. Não existe API JSON de títulos nesta versão.
+O cadastro recebe contraparte, descrição, valor total, emissão/vencimento inicial, conta, categoria opcional, documento, condição/parcelas, forma de pagamento, centro de custo/projeto e referências opcionais específicas do tipo. Cada baixa requer chave de operação, valor aplicado, data, conta e forma; desconto, juros, multa, tarifas, comprovante e observações são opcionais. O saldo é derivado das baixas. Referências de anexo, cobrança e comprovante não carregam nem armazenam arquivos. A API JSON equivalente está em `/api/v1/titles`.
+
+## Páginas web do CRM
+
+Sessão autenticada e token CSRF em todo POST. Erros de regra devolvem a própria página com o motivo e status `400`; IDs inexistentes ou de outra organização devolvem `404`.
+
+| Método | Rota | Ação |
+|---|---|---|
+| GET | `/crm` | Painel comercial com os indicadores |
+| GET, POST | `/crm/leads` | Lista (filtros `status`, `q`) e cadastra lead |
+| POST | `/crm/leads/{id}/update` | Atualiza critérios de qualificação e situação |
+| GET, POST | `/crm/leads/{id}/convert` | Formulário e conversão em contato/negociação |
+| GET, POST | `/crm/deals` | Quadro por etapa (`status=open`) ou lista de ganhas/perdidas; cadastra negociação |
+| GET | `/crm/deals/{id}` | Detalhe com atividades, propostas e histórico |
+| POST | `/crm/deals/{id}/update`, `/stage`, `/win`, `/lose`, `/reopen` | Altera dados, move etapa, ganha, perde (com `lost_reason`) ou reabre |
+| POST | `/crm/deals/{id}/activities` | Registra atividade na negociação |
+| POST | `/crm/deals/{id}/proposals` | Cria proposta em rascunho (`item_description_N`, `item_quantity_N`, `item_price_N`, `discount`, `valid_until`) |
+| GET, POST | `/crm/activities` | Lista (`status=pending\|done\|all`) e registra atividade |
+| POST | `/crm/activities/{id}/complete` | Conclui atividade |
+| GET, POST | `/crm/stages` | Lista e adiciona etapas do funil |
+| POST | `/crm/stages/{id}/update` | Altera nome, ordem e probabilidade, ou `action=activate\|deactivate` |
+| GET | `/crm/proposals` | Lista propostas (`status`) |
+| GET | `/crm/proposals/{id}` | Detalhe com itens, totais e títulos gerados |
+| POST | `/crm/proposals/{id}/send`, `/reject`, `/accept` | Marca como enviada, recusa ou registra o aceite (`account_id`, `payment_method`, `installment_count`, `first_due_date`, `category_id?`) e gera os títulos a receber |
 
 ## Autorização por perfil
 

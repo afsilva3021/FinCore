@@ -73,6 +73,9 @@ def json_payload(request: Request) -> dict[str, object]:
         raise ValueError("Envie um corpo JSON válido.") from exc
     if not isinstance(payload, dict):
         raise ValueError("O corpo JSON deve ser um objeto.")
+    # NUL não é aceito em texto pelo PostgreSQL; recusado aqui para não virar erro 500.
+    if "\\u0000" in (raw or ""):
+        raise ValueError("O corpo JSON contém caracteres inválidos.")
     return payload
 
 

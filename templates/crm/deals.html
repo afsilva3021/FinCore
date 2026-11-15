@@ -1,0 +1,55 @@
+{% extends "finance/layout.html" %}
+{% block title %}Negociações · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · FUNIL DE VENDAS</span><h1>Negociações</h1><p>Acompanhe cada oportunidade pelas etapas do funil até o ganho ou a perda.</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/crm/stages">Etapas do funil</a><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="deal-drawer" aria-expanded="false">＋ Nova negociação</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error and not open_drawer %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<nav class="crm-chip-row mb-3" aria-label="Situação das negociações">{% for key, label in status_labels.items() %}<a class="crm-chip {% if status == key %}is-active{% endif %}" href="/crm/deals?status={{ key }}" {% if status == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+{% if status == 'open' %}
+  {% if truncated %}<div class="alert alert-info" role="status">O quadro mostra as {{ kanban_limit }} negociações abertas há mais tempo na etapa.</div>{% endif %}
+  <section class="crm-board" aria-label="Quadro de negociações por etapa">
+  {% for stage, deals, total in columns %}
+    <div class="crm-column" aria-label="Etapa {{ stage.name }}">
+      <div class="crm-column-head"><div><strong>{{ stage.name }}</strong>{% if not stage.is_active %} <span class="badge text-bg-secondary">inativa</span>{% endif %}<small>{{ stage.win_probability }}% · {{ deals|length }} negociação(ões)</small></div><span class="crm-column-total">R$ {{ total|brl }}</span></div>
+      {% for deal in deals %}
+      <article class="crm-card {% if deal.id in stalled %}is-stalled{% endif %}">
+        <a class="crm-card-title" href="/crm/deals/{{ deal.id }}">{{ deal.title }}</a>
+        <small>{{ deal.counterparty.name }}</small>
+        <div class="crm-card-meta"><strong>R$ {{ deal.amount|brl }}</strong>{% if deal.expected_close_date %}<span>Prev. {{ deal.expected_close_date.strftime('%d/%m/%Y') }}</span>{% endif %}</div>
+        {% if deal.id in stalled %}<span class="badge text-bg-warning">Parada há mais de {{ stalled_days }} dias</span>{% endif %}
+        <form method="post" action="/crm/deals/{{ deal.id }}/stage" class="crm-move-form"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="return_to" value="board"><label class="visually-hidden" for="move-{{ deal.id }}">Mover {{ deal.title }} para a etapa</label><select class="form-select form-select-sm" id="move-{{ deal.id }}" name="stage_id">{% for option in active_stages %}<option value="{{ option.id }}" {% if option.id == deal.stage_id %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary" type="submit">Mover</button></form>
+      </article>
+      {% else %}<p class="crm-column-empty">Nenhuma negociação nesta etapa.</p>{% endfor %}
+    </div>
+  {% endfor %}
+  </section>
+{% else %}
+<article class="panel-card transactions-table-card">
+  {% if closed %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Negociação</th><th>Contato</th><th class="text-end">Valor</th><th>Encerrada em</th><th>{{ 'Motivo da perda' if status == 'lost' else 'Etapa final' }}</th></tr></thead><tbody>
+  {% for deal in closed %}<tr><td><a href="/crm/deals/{{ deal.id }}"><strong>{{ deal.title }}</strong></a></td><td>{{ deal.counterparty.name }}</td><td class="text-end">R$ {{ deal.amount|brl }}</td><td>{{ deal.closed_at.strftime('%d/%m/%Y') if deal.closed_at else '—' }}</td><td>{{ deal.lost_reason if status == 'lost' else deal.stage.name }}</td></tr>{% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>▥</span><strong>Nenhuma negociação {{ 'perdida' if status == 'lost' else 'ganha' }}</strong></div>{% endif %}
+</article>
+{% endif %}
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="deal-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="deal-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">NOVA NEGOCIAÇÃO</span><h2 id="deal-drawer-title">Cadastrar negociação</h2><p>A negociação não gera título nem movimenta caixa.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/crm/deals" class="movement-drawer-form" data-movement-form><input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if error and open_drawer %}<div class="alert alert-danger mx-4 mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="deal-title">Título</label><input class="form-control" id="deal-title" name="title" maxlength="160" value="{{ form.get('title','') }}" required></div>
+      <div><label class="form-label" for="deal-contact">Contato</label><select class="form-select" id="deal-contact" name="counterparty_id" required><option value="">Selecione</option>{% for contact in contacts %}<option value="{{ contact.id }}" {% if form.get('counterparty_id') == contact.id|string %}selected{% endif %}>{{ contact.name }}</option>{% endfor %}</select><small class="form-text">{% if not contacts %}Nenhum contato ativo. {% endif %}<a href="/customers">Cadastrar cliente</a> ou converta um <a href="/crm/leads">lead</a>.</small></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="deal-amount">Valor</label><div class="input-group"><span class="input-group-text">R$</span><input class="form-control" id="deal-amount" name="amount" inputmode="decimal" placeholder="0,00" value="{{ form.get('amount','') }}"></div></div><div><label class="form-label" for="deal-stage">Etapa</label><select class="form-select" id="deal-stage" name="stage_id">{% for stage in active_stages %}<option value="{{ stage.id }}" {% if form.get('stage_id') == stage.id|string %}selected{% endif %}>{{ stage.name }} ({{ stage.win_probability }}%)</option>{% endfor %}</select></div></div>
+      <div><label class="form-label" for="deal-close">Previsão de fechamento</label><input class="form-control" type="date" id="deal-close" name="expected_close_date" value="{{ form.get('expected_close_date','') }}"></div>
+      <div><label class="form-label" for="deal-notes">Observações</label><textarea class="form-control" id="deal-notes" name="notes" rows="3" maxlength="2000">{{ form.get('notes','') }}</textarea></div>
+    </div>
+    <div class="movement-drawer-footer"><span>Valores em BRL.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Adicionar negociação</button></div></div>
+  </form>
+</aside>
+{% endblock %}

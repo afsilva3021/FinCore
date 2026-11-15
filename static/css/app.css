@@ -308,3 +308,45 @@ html[data-theme="dark"] .title-settlement>summary{color:#acd0f7;border-color:#54
 /* Perfil somente leitura: esconde ações de escrita (o servidor também bloqueia com 403). */
 .is-readonly [data-drawer-open],
 .is-readonly form[method="post"]:not([action="/logout"]) { display: none !important; }
+
+/* CRM: quadro de negociações, chips de filtro e páginas de detalhe. */
+.crm-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(250px,1fr);gap:14px;overflow-x:auto;padding-bottom:10px;align-items:start}
+.crm-column{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;min-height:150px}
+.crm-column-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.crm-column-head small{display:block;color:var(--muted);font-size:12px}
+.crm-column-total{font-weight:600;font-size:13px;white-space:nowrap;color:var(--ink)}
+.crm-column-empty{color:var(--muted);font-size:13px;margin:12px 0 0}
+.crm-card{background:var(--canvas);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px;display:grid;gap:5px}
+.crm-card.is-stalled{border-color:#e9b949}
+.crm-card-title{font-weight:600;color:var(--ink);text-decoration:none;overflow-wrap:anywhere}
+.crm-card-title:hover{color:var(--primary-dark);text-decoration:underline}
+.crm-card small{color:var(--muted)}
+.crm-card-meta{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)}
+.crm-card-meta strong{color:var(--ink)}
+.crm-move-form{display:flex;gap:6px;margin-top:4px}
+.crm-chip-row{display:flex;flex-wrap:wrap;gap:8px}
+.crm-chip{display:inline-flex;gap:6px;align-items:center;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);text-decoration:none;font-size:14px}
+.crm-chip:hover,.crm-chip.is-active{border-color:var(--primary);color:var(--primary-dark)}
+.crm-chip.is-active{background:#eaf2fd;font-weight:600}
+.crm-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.crm-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.crm-item-row{display:grid;grid-template-columns:minmax(0,3fr) minmax(70px,1fr) minmax(90px,1.3fr);gap:8px}
+.crm-stage-form{display:grid;grid-template-columns:80px minmax(140px,2fr) minmax(110px,1fr) auto;gap:8px;align-items:center}
+.crm-inline-form>summary{list-style:none}
+.crm-inline-form>summary::-webkit-details-marker{display:none}
+.crm-inline-panel{display:grid;gap:8px;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:9px;min-width:230px;background:var(--canvas)}
+.crm-status{background:#e8eef6;color:#31485f}
+.crm-status-qualified,.crm-status-won,.crm-status-accepted,.crm-status-converted{background:#dff3e6;color:#17633a}
+.crm-status-disqualified,.crm-status-lost,.crm-status-rejected{background:#fbe3e1;color:#8f2a21}
+.crm-status-contacted,.crm-status-sent,.crm-status-open{background:#e0ecfb;color:#1f4f8f}
+.crm-status-expired{background:#fdf0cf;color:#7a5600}
+.is-readonly .crm-inline-form{display:none}
+@media (max-width:900px){.crm-detail-grid{grid-template-columns:1fr}.crm-stage-form{grid-template-columns:70px 1fr}.crm-item-row{grid-template-columns:1fr 1fr}.crm-item-row>div:first-child{grid-column:1/-1}}
+[data-theme="dark"] .crm-column,[data-theme="dark"] .crm-chip{background:#121e30;border-color:#293a52;color:#e4edf8}
+[data-theme="dark"] .crm-card,[data-theme="dark"] .crm-inline-panel{background:#0e1726;border-color:#293a52}
+[data-theme="dark"] .crm-chip.is-active{background:#1b3152;color:#b8d8ff}
+[data-theme="dark"] .crm-status{background:#22344c;color:#cfdcee}
+[data-theme="dark"] .crm-status-qualified,[data-theme="dark"] .crm-status-won,[data-theme="dark"] .crm-status-accepted,[data-theme="dark"] .crm-status-converted{background:#173a29;color:#a5e3bf}
+[data-theme="dark"] .crm-status-disqualified,[data-theme="dark"] .crm-status-lost,[data-theme="dark"] .crm-status-rejected{background:#45201d;color:#f3b4ad}
+[data-theme="dark"] .crm-status-contacted,[data-theme="dark"] .crm-status-sent,[data-theme="dark"] .crm-status-open{background:#1b3152;color:#b8d8ff}
+[data-theme="dark"] .crm-status-expired{background:#463a16;color:#f1d58a}

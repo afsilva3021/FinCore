@@ -1,0 +1,27 @@
+{% extends "finance/layout.html" %}
+{% block title %}Etapas do funil · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · CONFIGURAÇÃO</span><h1>Etapas do funil</h1><p>Defina as etapas, a ordem e a probabilidade de ganho usada na previsão. Ganha e perdida são situações da negociação, não etapas.</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/crm/deals">Voltar ao quadro</a></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<article class="panel-card transactions-table-card">
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Ordem</th><th>Etapa</th><th>Probabilidade de ganho</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+  {% for stage in stages %}<tr>
+    <td colspan="3"><form method="post" action="/crm/stages/{{ stage.id }}/update" class="crm-stage-form"><input type="hidden" name="csrf" value="{{ csrf }}"><label class="visually-hidden" for="pos-{{ stage.id }}">Ordem</label><input class="form-control form-control-sm" id="pos-{{ stage.id }}" name="position" type="number" min="1" max="999" value="{{ stage.position }}"><label class="visually-hidden" for="name-{{ stage.id }}">Nome da etapa</label><input class="form-control form-control-sm" id="name-{{ stage.id }}" name="name" maxlength="60" value="{{ stage.name }}" required><label class="visually-hidden" for="prob-{{ stage.id }}">Probabilidade (%)</label><div class="input-group input-group-sm"><input class="form-control" id="prob-{{ stage.id }}" name="win_probability" type="number" min="0" max="100" value="{{ stage.win_probability }}" required><span class="input-group-text">%</span></div><button class="btn btn-sm btn-outline-primary" type="submit">Salvar</button></form>{% if not can_write() %}{{ stage.position }} · {{ stage.name }} · {{ stage.win_probability }}%{% endif %}</td>
+    <td><span class="badge {{ 'text-bg-success' if stage.is_active else 'text-bg-secondary' }}">{{ 'Ativa' if stage.is_active else 'Inativa' }}</span></td>
+    <td><form method="post" action="/crm/stages/{{ stage.id }}/update"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="{{ 'deactivate' if stage.is_active else 'activate' }}"><button class="btn btn-sm {{ 'btn-outline-secondary' if stage.is_active else 'btn-outline-success' }}" type="submit">{{ 'Desativar' if stage.is_active else 'Reativar' }}</button></form></td>
+  </tr>{% endfor %}
+  </tbody></table></div>
+</article>
+<article class="panel-card mt-3"><div class="panel-heading"><div><h3>Nova etapa</h3><p>Até 12 etapas. A etapa só pode ser desativada sem negociações em aberto.</p></div></div>
+  <form method="post" action="/crm/stages" class="row g-2 align-items-end"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-md-5"><label class="form-label" for="new-stage-name">Nome</label><input class="form-control" id="new-stage-name" name="name" maxlength="60" required></div>
+    <div class="col-md-3"><label class="form-label" for="new-stage-prob">Probabilidade de ganho (%)</label><input class="form-control" id="new-stage-prob" name="win_probability" type="number" min="0" max="100" value="50" required></div>
+    <div class="col-md-2"><label class="form-label" for="new-stage-pos">Ordem</label><input class="form-control" id="new-stage-pos" name="position" type="number" min="1" max="999" placeholder="Fim"></div>
+    <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Adicionar</button></div>
+  </form>
+</article>
+{% endblock %}

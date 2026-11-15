@@ -40,6 +40,26 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    LeadId:
+      name: lead_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    DealId:
+      name: deal_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ActivityId:
+      name: activity_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ProposalId:
+      name: proposal_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
   schemas:
     Money:
       type: string
@@ -126,6 +146,177 @@ components:
         payment_method: {type: string}
         account_id: {type: string, format: uuid}
         financial_transaction_id: {type: string, format: uuid}
+    AmountOrZero:
+      type: string
+      pattern: '^\d+(\.\d{1,2})?$'
+      description: Valor monetário que aceita zero.
+      examples: ["0.00"]
+    CrmStage:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        position: {type: integer}
+        win_probability: {type: integer, minimum: 0, maximum: 100}
+        is_active: {type: boolean}
+    CrmLead:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        company_name: {type: [string, "null"]}
+        email: {type: [string, "null"]}
+        phone: {type: [string, "null"]}
+        source: {type: string, enum: [website, referral, cold_call, event, social, other]}
+        status: {type: string, enum: [new, contacted, qualified, disqualified, converted]}
+        estimated_value: {type: [string, "null"]}
+        currency: {type: string, examples: [BRL]}
+        qualification:
+          type: object
+          properties:
+            need: {type: boolean}
+            budget: {type: boolean}
+            authority: {type: boolean}
+            timeline: {type: boolean}
+        converted_counterparty_id: {type: [string, "null"], format: uuid}
+        converted_deal_id: {type: [string, "null"], format: uuid}
+        converted_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+    CrmLeadCreate:
+      type: object
+      required: [operation_key, name]
+      properties:
+        operation_key: {type: string, format: uuid, description: Reenvio com a mesma chave devolve o mesmo lead.}
+        name: {type: string, maxLength: 160}
+        company_name: {type: string, maxLength: 160}
+        email: {type: string, maxLength: 254}
+        phone: {type: string, maxLength: 40}
+        source: {type: string, enum: [website, referral, cold_call, event, social, other], default: other}
+        estimated_value: {$ref: '#/components/schemas/AmountOrZero'}
+        notes: {type: string, maxLength: 2000}
+    CrmLeadConvert:
+      type: object
+      properties:
+        counterparty_id: {type: string, format: uuid, description: "Vincula a um contato existente; sem ele, cria contato novo e recusa duplicidade por nome ou e-mail."}
+        person_type: {type: string, enum: [individual, company], default: individual}
+        tax_id: {type: string, description: CPF ou CNPJ do contato novo (opcional).}
+        create_deal: {type: boolean, default: true}
+        deal_title: {type: string, maxLength: 160}
+        deal_amount: {$ref: '#/components/schemas/AmountOrZero'}
+        stage_id: {type: string, format: uuid}
+        expected_close_date: {type: string, format: date}
+    CrmDeal:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        status: {type: string, enum: [open, won, lost]}
+        amount: {$ref: '#/components/schemas/AmountOrZero'}
+        currency: {type: string, examples: [BRL]}
+        counterparty_id: {type: string, format: uuid}
+        stage_id: {type: string, format: uuid}
+        expected_close_date: {type: [string, "null"], format: date}
+        lost_reason: {type: [string, "null"]}
+        stage_changed_at: {type: string, format: date-time}
+        closed_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+    CrmDealCreate:
+      type: object
+      required: [operation_key, counterparty_id, title]
+      properties:
+        operation_key: {type: string, format: uuid}
+        counterparty_id: {type: string, format: uuid}
+        title: {type: string, maxLength: 160}
+        amount: {$ref: '#/components/schemas/AmountOrZero'}
+        stage_id: {type: string, format: uuid, description: Padrão é a primeira etapa ativa do funil.}
+        expected_close_date: {type: string, format: date}
+        notes: {type: string, maxLength: 2000}
+    CrmActivity:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        type: {type: string, enum: [task, call, meeting, email, note]}
+        subject: {type: string}
+        due_date: {type: [string, "null"], format: date}
+        done_at: {type: [string, "null"], format: date-time}
+        lead_id: {type: [string, "null"], format: uuid}
+        deal_id: {type: [string, "null"], format: uuid}
+        counterparty_id: {type: [string, "null"], format: uuid}
+        notes: {type: [string, "null"]}
+    CrmActivityCreate:
+      type: object
+      required: [type, subject]
+      description: Informe exatamente um de lead_id, deal_id ou counterparty_id. Notas nascem concluídas.
+      properties:
+        type: {type: string, enum: [task, call, meeting, email, note]}
+        subject: {type: string, maxLength: 200}
+        due_date: {type: string, format: date}
+        notes: {type: string, maxLength: 2000}
+        done: {type: boolean, default: false}
+        lead_id: {type: string, format: uuid}
+        deal_id: {type: string, format: uuid}
+        counterparty_id: {type: string, format: uuid}
+    CrmProposalItem:
+      type: object
+      properties:
+        description: {type: string}
+        quantity: {type: string, examples: ["1.500"]}
+        unit_price: {$ref: '#/components/schemas/Money'}
+        total: {$ref: '#/components/schemas/Money'}
+    CrmProposal:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: integer, description: Sequencial por organização.}
+        deal_id: {type: string, format: uuid}
+        status: {type: string, enum: [draft, sent, accepted, rejected]}
+        expired: {type: boolean, description: Calculado; rascunho ou enviada com validade no passado.}
+        issue_date: {type: string, format: date}
+        valid_until: {type: string, format: date}
+        discount: {$ref: '#/components/schemas/AmountOrZero'}
+        total: {allOf: [{$ref: '#/components/schemas/Money'}], description: Soma dos itens menos o desconto.}
+        currency: {type: string, examples: [BRL]}
+        first_title_id: {type: [string, "null"], format: uuid}
+        decided_at: {type: [string, "null"], format: date-time}
+    CrmProposalDetail:
+      allOf:
+        - {$ref: '#/components/schemas/CrmProposal'}
+        - type: object
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/CrmProposalItem'}}
+            titles:
+              type: array
+              description: Títulos a receber gerados no aceite; vazio antes dele.
+              items: {$ref: '#/components/schemas/Title'}
+    CrmProposalCreate:
+      type: object
+      required: [operation_key, items, valid_until]
+      properties:
+        operation_key: {type: string, format: uuid}
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required: [description, unit_price]
+            properties:
+              description: {type: string, maxLength: 200}
+              quantity: {type: string, default: "1", description: Decimal com até três casas.}
+              unit_price: {$ref: '#/components/schemas/Money'}
+        discount: {$ref: '#/components/schemas/AmountOrZero'}
+        valid_until: {type: string, format: date}
+        notes: {type: string, maxLength: 2000}
+    CrmProposalAccept:
+      type: object
+      required: [operation_key, account_id, payment_method, first_due_date]
+      properties:
+        operation_key: {type: string, format: uuid, description: Vira a chave de criação dos títulos; já usada por outros títulos = 409.}
+        account_id: {type: string, format: uuid}
+        category_id: {type: string, format: uuid, description: Categoria analítica de receita.}
+        payment_method: {type: string, enum: [cash, bank_transfer, pix, boleto, card, other]}
+        first_due_date: {type: string, format: date}
+        installments: {type: integer, minimum: 1, maximum: 36, default: 1}
   responses:
     Unauthenticated:
       description: Sessão ausente ou expirada.
@@ -253,3 +444,348 @@ paths:
         "200": {description: Movimentação.}
         "401": {$ref: '#/components/responses/Unauthenticated'}
         "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/crm/summary:
+    get:
+      summary: Indicadores do CRM
+      description: Previsão e valor ganho são indicadores comerciais, não receita realizada.
+      responses:
+        "200": {description: "Leads, negociações, etapas, atividades e propostas aguardando resposta."}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/crm/stages:
+    get:
+      summary: Etapas do funil
+      responses:
+        "200":
+          description: Etapas da organização em ordem.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/CrmStage'}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/crm/leads:
+    get:
+      summary: Lista leads
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: status, in: query, schema: {type: string, enum: [new, contacted, qualified, disqualified, converted, active]}}
+      responses:
+        "200":
+          description: Página de leads.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/CrmLead'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      summary: Cadastra lead
+      security: [{session: [], csrf: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CrmLeadCreate'}}}
+      responses:
+        "201":
+          description: Lead criado (ou o mesmo, num reenvio com a mesma operation_key).
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmLead'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/leads/{lead_id}:
+    get:
+      summary: Detalhe do lead
+      parameters: [{$ref: '#/components/parameters/LeadId'}]
+      responses:
+        "200":
+          description: Lead.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmLead'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/crm/leads/{lead_id}/convert:
+    post:
+      summary: Converte lead em contato e, opcionalmente, negociação
+      description: Atômico e de uso único. Não cria título nem movimenta caixa.
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/LeadId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CrmLeadConvert'}}}
+      responses:
+        "201":
+          description: Lead convertido.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead: {$ref: '#/components/schemas/CrmLead'}
+                  counterparty_id: {type: string, format: uuid}
+                  deal:
+                    oneOf:
+                      - {$ref: '#/components/schemas/CrmDeal'}
+                      - {type: "null"}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/deals:
+    get:
+      summary: Lista negociações
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: status, in: query, schema: {type: string, enum: [open, won, lost]}}
+      responses:
+        "200":
+          description: Página de negociações.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/CrmDeal'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      summary: Cadastra negociação
+      security: [{session: [], csrf: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CrmDealCreate'}}}
+      responses:
+        "201":
+          description: Negociação criada (ou a mesma, num reenvio com a mesma operation_key).
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmDeal'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/deals/{deal_id}:
+    get:
+      summary: Detalhe da negociação
+      parameters: [{$ref: '#/components/parameters/DealId'}]
+      responses:
+        "200":
+          description: Negociação.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmDeal'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/crm/deals/{deal_id}/stage:
+    post:
+      summary: Move a negociação de etapa
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/DealId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage_id]
+              properties:
+                stage_id: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Negociação na nova etapa.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmDeal'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/deals/{deal_id}/win:
+    post:
+      summary: Marca a negociação como ganha
+      description: Não gera título; para faturar, aceite uma proposta.
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/DealId'}]
+      responses:
+        "200":
+          description: Negociação ganha.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmDeal'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/deals/{deal_id}/lose:
+    post:
+      summary: Marca a negociação como perdida
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/DealId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lost_reason]
+              properties:
+                lost_reason: {type: string, maxLength: 240}
+      responses:
+        "200":
+          description: Negociação perdida.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmDeal'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/deals/{deal_id}/proposals:
+    post:
+      summary: Cria proposta em rascunho para a negociação
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/DealId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CrmProposalCreate'}}}
+      responses:
+        "201":
+          description: Proposta criada (ou a mesma, num reenvio com a mesma operation_key).
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmProposalDetail'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/activities:
+    get:
+      summary: Lista atividades
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: status, in: query, schema: {type: string, enum: [pending, done, all], default: pending}}
+      responses:
+        "200":
+          description: Página de atividades.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/CrmActivity'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      summary: Registra atividade
+      security: [{session: [], csrf: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CrmActivityCreate'}}}
+      responses:
+        "201":
+          description: Atividade registrada.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmActivity'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/crm/activities/{activity_id}/complete:
+    post:
+      summary: Conclui atividade
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/ActivityId'}]
+      responses:
+        "200":
+          description: Atividade concluída (repetir não altera a data).
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmActivity'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/crm/proposals:
+    get:
+      summary: Lista propostas
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: status, in: query, schema: {type: string, enum: [draft, sent, accepted, rejected]}}
+      responses:
+        "200":
+          description: Página de propostas com total derivado dos itens.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/CrmProposal'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/crm/proposals/{proposal_id}:
+    get:
+      summary: Detalhe da proposta com itens e títulos gerados
+      parameters: [{$ref: '#/components/parameters/ProposalId'}]
+      responses:
+        "200":
+          description: Proposta.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmProposalDetail'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/crm/proposals/{proposal_id}/send:
+    post:
+      summary: Registra que a proposta foi apresentada ao cliente
+      description: Apenas registro; o FinCore não envia e-mail nem mensagem.
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/ProposalId'}]
+      responses:
+        "200":
+          description: Proposta enviada.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmProposalDetail'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/proposals/{proposal_id}/reject:
+    post:
+      summary: Registra a recusa da proposta
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/ProposalId'}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, maxLength: 240}
+      responses:
+        "200":
+          description: Proposta recusada.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmProposalDetail'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/crm/proposals/{proposal_id}/accept:
+    post:
+      summary: Registra o aceite e gera os títulos a receber
+      description: |
+        Numa única transação: cria os títulos a receber para o contato da negociação
+        (parcelas somam exatamente o total), marca a proposta como aceita e a negociação
+        como ganha. Não movimenta caixa nem aparece no extrato; o recebimento é a baixa
+        do título. Reenviar o aceite devolve os mesmos títulos.
+      security: [{session: [], csrf: []}]
+      parameters: [{$ref: '#/components/parameters/ProposalId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CrmProposalAccept'}}}
+      responses:
+        "201":
+          description: Proposta aceita, com titles[] preenchido.
+          content: {application/json: {schema: {$ref: '#/components/schemas/CrmProposalDetail'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}

@@ -90,7 +90,13 @@ async def create_titles(
     attachment_reference: str = "",
     notes: str = "",
     operation_key: UUID | None = None,
+    counterparty_id: UUID | None = None,
 ) -> list[FinancialTitle]:
+    """Cadastra um título ou suas parcelas, sem movimentar caixa.
+
+    Com `counterparty_id`, o título usa exatamente esse contato da organização (caso das
+    propostas do CRM) e `counterparty_name`/`party_type` são ignorados.
+    """
     if operation_key is not None:
         replay = await _titles_for_operation_key(organization, operation_key)
         if replay is not None:
@@ -99,10 +105,11 @@ async def create_titles(
         raise ValueError("Tipo de título inválido.")
     if not description.strip() or len(description) > 240:
         raise ValueError("Informe uma descrição de até 240 caracteres.")
-    if not counterparty_name.strip() or len(counterparty_name) > 160:
-        raise ValueError("Informe o fornecedor, cliente ou contato relacionado.")
-    if party_type not in PARTY_TYPES:
-        raise ValueError("Selecione fornecedor, cliente ou outro contato.")
+    if counterparty_id is None:
+        if not counterparty_name.strip() or len(counterparty_name) > 160:
+            raise ValueError("Informe o fornecedor, cliente ou contato relacionado.")
+        if party_type not in PARTY_TYPES:
+            raise ValueError("Selecione fornecedor, cliente ou outro contato.")
     if amount <= 0 or amount > MAX_AMOUNT:
         raise ValueError("O valor original deve ser maior que zero.")
     if due_date < issue_date:
@@ -139,12 +146,23 @@ async def create_titles(
     created: list[FinancialTitle] = []
     try:
         async with in_transaction():
-            counterparty = await Counterparty.filter(
-                organization=organization,
-                name=name,
-                party_type=party_type,
-            ).first()
-            if counterparty is None and party_type in {"customer", "supplier"}:
+            if counterparty_id is not None:
+                counterparty = await Counterparty.get_or_none(
+                    id=counterparty_id, organization=organization
+                )
+                if counterparty is None:
+                    raise ValueError("Contato não encontrado nesta organização.")
+            else:
+                counterparty = await Counterparty.filter(
+                    organization=organization,
+                    name=name,
+                    party_type=party_type,
+                ).first()
+            if (
+                counterparty is None
+                and counterparty_id is None
+                and party_type in {"customer", "supplier"}
+            ):
                 role_field = "is_customer" if party_type == "customer" else "is_supplier"
                 counterparty = await Counterparty.filter(
                     organization=organization,

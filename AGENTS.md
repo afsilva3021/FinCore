@@ -116,9 +116,11 @@ Consulte `README.md`, `docs/progress.md`, `docs/api.md` e os testes antes de dec
 - Plano contábil, diário de partidas dobradas, livro razão, rascunho/efetivação/estorno e backfill idempotente.
 - Importação OFX 1.x SGML e conciliação manual com deduplicação e auditoria. CNAB tem somente protocolo de adapter sem layout bancário implementado.
 - Exportação de relatório CSV/PDF e simuladores locais sem integrações externas reais.
+- CRM: leads com qualificação e conversão, funil com etapas configuráveis, negociações com histórico, atividades, propostas e painel comercial. O aceite de proposta gera títulos a receber de forma atômica e idempotente; não movimenta caixa. Regras em `docs/crm.md`. O CRM não envia e-mail nem mensagens.
+- API JSON `/api/v1/crm` para leads, etapas, negociações, atividades, propostas e indicadores.
 - API JSON `/api/v1` para sessão, contas, categorias, transações e títulos (listar, detalhar, cadastrar com parcelas, baixar e cancelar, com idempotência por `operation_key`). Contrato em `docs/api.md` e `docs/openapi.yaml`.
 
-Entidades Tortoise existentes: `Organization`, `User`, `Membership`, `FinancialAccount`, `Category`, `FinancialTransaction`, `Counterparty`, `FinancialTitle`, `TitleSettlement`, `LedgerAccount`, `JournalEntry`, `JournalEntryLine`, `ImportedStatementTransaction`, `ReconciliationMatch` e `ReconciliationEvent`. Seus vínculos e responsabilidades estão no README e `src/fincore/infrastructure/models.py`. Não duplicar entidades antes de inspecionar o modelo e migrations.
+Entidades Tortoise existentes: `Organization`, `User`, `Membership`, `FinancialAccount`, `Category`, `FinancialTransaction`, `Counterparty`, `FinancialTitle`, `TitleSettlement`, `LedgerAccount`, `JournalEntry`, `JournalEntryLine`, `ImportedStatementTransaction`, `ReconciliationMatch`, `ReconciliationEvent`, `CrmPipelineStage`, `CrmLead`, `CrmDeal`, `CrmDealEvent`, `CrmActivity`, `CrmProposal` e `CrmProposalItem`. O CRM usa `Counterparty` como contato; não crie outra entidade de cliente. Seus vínculos e responsabilidades estão no README e `src/fincore/infrastructure/models.py`. Não duplicar entidades antes de inspecionar o modelo e migrations.
 
 Não recrie módulos funcionais já existentes nem mude seus contratos sem necessidade. Não assuma que todos os checkboxes do README indicam conclusão; confirme progress.md e testes. Recursos simulados, incompletos ou bloqueados precisam continuar explicitamente identificados.
 
@@ -171,8 +173,8 @@ https://github.com/firefly-iii/firefly-iii
 - Interface responsiva em pt-BR, com acessibilidade básica, estados de carregamento e mensagens de erro claras.
 - Não expor funcionalidades como prontas na interface quando forem apenas simuladas; sinalizar claramente o ambiente de demonstração.
 - A interface atual é renderizada no servidor com Robyn/Jinja/Bootstrap. Formulários seguem sessão e CSRF; mensagens de confirmação usam modal da interface, não `alert()`/`confirm()` nativos do JavaScript.
-- Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports`, `/integrations` e `/members`. Verifique `docs/api.md` para métodos e limites completos.
-- Títulos têm páginas HTML (`/payables`, `/receivables`, `/titles/...`) e API JSON (`/api/v1/titles`). Mudanças na API de títulos atualizam `docs/openapi.yaml` e devem continuar passando no `openapi-spec-validator`.
+- Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports`, `/integrations`, `/members` e as do CRM (`/crm`, `/crm/leads`, `/crm/deals`, `/crm/activities`, `/crm/stages`, `/crm/proposals`). Verifique `docs/api.md` para métodos e limites completos.
+- Títulos têm páginas HTML (`/payables`, `/receivables`, `/titles/...`) e API JSON (`/api/v1/titles`). O CRM tem páginas em `/crm/...` e API JSON em `/api/v1/crm`. Mudanças na API de títulos ou do CRM atualizam `docs/openapi.yaml` e devem continuar passando no `openapi-spec-validator`.
 
 ## 6. Segurança mínima obrigatória
 

@@ -452,10 +452,10 @@ document.querySelectorAll('form[data-confirm]').forEach((form) => {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const accepted = await showConfirmation({
-      title: 'Confirmar estorno',
+      title: form.dataset.confirmTitle || 'Confirmar estorno',
       message: form.dataset.confirm,
-      confirmText: 'Confirmar estorno',
-      variant: 'danger',
+      confirmText: form.dataset.confirmAction || 'Confirmar estorno',
+      variant: form.dataset.confirmTitle ? 'primary' : 'danger',
     });
     if (accepted) HTMLFormElement.prototype.submit.call(form);
   });
@@ -466,7 +466,7 @@ if (adapterSelect) {
   const amountField = document.querySelector('[data-amount-field]');
   const amountInput = document.querySelector('#amount');
   const syncAdapterFields = () => {
-    const needsAmount = adapterSelect.value !== 'open_finance';
+    const needsAmount = !['open_finance', 'crm_email', 'crm_whatsapp'].includes(adapterSelect.value);
     amountField?.toggleAttribute('hidden', !needsAmount);
     amountInput?.toggleAttribute('required', needsAmount);
   };

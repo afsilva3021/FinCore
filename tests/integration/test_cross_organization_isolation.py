@@ -19,12 +19,19 @@ from tortoise import Tortoise
 from fincore.app import app
 from fincore.application.accounting import create_journal_entry
 from fincore.application.counterparties import save_counterparty
+from fincore.application.crm import create_activity, create_deal, create_lead
+from fincore.application.crm_proposals import create_proposal, send_proposal
 from fincore.application.finance import create_account, create_movement
 from fincore.application.identity import register_user
 from fincore.application.titles import create_titles
 from fincore.config.database import TORTOISE_ORM
 from fincore.infrastructure.models import (
     Counterparty,
+    CrmActivity,
+    CrmDeal,
+    CrmLead,
+    CrmPipelineStage,
+    CrmProposal,
     FinancialAccount,
     FinancialTitle,
     FinancialTransaction,
@@ -127,7 +134,35 @@ async def _seed_organization_a():
         description=f"{SECRET_NAME} extrato",
         amount=Decimal("50.00"),
     )
+    lead = await create_lead(organization=organization, user=user, name=f"{SECRET_NAME} lead")
+    deal = await create_deal(
+        organization=organization,
+        user=user,
+        counterparty_id=contact.id,
+        title=f"{SECRET_NAME} negociação",
+        amount=Decimal("300.00"),
+    )
+    activity = await create_activity(
+        organization=organization,
+        user=user,
+        activity_type="task",
+        subject=f"{SECRET_NAME} atividade",
+        deal_id=deal.id,
+    )
+    proposal = await create_proposal(
+        organization=organization,
+        user=user,
+        deal_id=deal.id,
+        items=[(f"{SECRET_NAME} item", Decimal("1"), Decimal("300.00"))],
+        valid_until=date.today(),
+    )
+    await send_proposal(organization=organization, proposal_id=proposal.id)
     return {
+        "lead": lead,
+        "deal": deal,
+        "stage": await deal.stage,
+        "activity": activity,
+        "proposal": proposal,
         "organization": organization,
         "account": account,
         "open_movement": open_movement,
@@ -161,6 +196,15 @@ async def _snapshot(seed: dict) -> dict:
         "matches": await ReconciliationMatch.filter(
             statement_transaction__organization=organization
         ).count(),
+        "leads": await CrmLead.filter(organization=organization).values("id", "status"),
+        "deals": await CrmDeal.filter(organization=organization).values(
+            "id", "status", "stage_id", "title"
+        ),
+        "stages": await CrmPipelineStage.filter(organization=organization)
+        .order_by("id")
+        .values("id", "name", "is_active", "win_probability"),
+        "activities": await CrmActivity.filter(organization=organization).values("id", "done_at"),
+        "proposals": await CrmProposal.filter(organization=organization).values("id", "status"),
     }
 
 
@@ -236,6 +280,77 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
             f"/api/v1/transactions/{a['settled_movement']}/reverse",
             api,
             json.dumps({"operation_key": str(uuid4()), "reversed_at": today}),
+        ),
+        ("get", f"/crm/leads/{a['lead']}/convert", form, None),
+        ("post", f"/crm/leads/{a['lead']}/convert", form, "create_deal=true"),
+        ("post", f"/crm/leads/{a['lead']}/update", form, "status=contacted"),
+        ("get", f"/crm/deals/{a['deal']}", form, None),
+        ("post", f"/crm/deals/{a['deal']}/update", form, "title=Invadida&amount=1,00"),
+        ("post", f"/crm/deals/{a['deal']}/stage", form, f"stage_id={a['stage']}"),
+        ("post", f"/crm/deals/{a['deal']}/win", form, ""),
+        ("post", f"/crm/deals/{a['deal']}/lose", form, "lost_reason=Invadida"),
+        ("post", f"/crm/deals/{a['deal']}/reopen", form, ""),
+        ("post", f"/crm/deals/{a['deal']}/activities", form, "activity_type=note&subject=X"),
+        (
+            "post",
+            f"/crm/deals/{a['deal']}/proposals",
+            form,
+            f"item_description_1=X&item_price_1=10,00&valid_until={today}",
+        ),
+        ("post", "/crm/activities", form, f"activity_type=note&subject=X&deal_id={a['deal']}"),
+        ("post", "/crm/activities", form, f"activity_type=note&subject=X&lead_id={a['lead']}"),
+        ("post", f"/crm/activities/{a['activity']}/complete", form, ""),
+        ("post", f"/crm/stages/{a['stage']}/update", form, "name=Invadida&win_probability=1"),
+        ("post", f"/crm/stages/{a['stage']}/update", form, "action=deactivate"),
+        ("get", f"/crm/proposals/{a['proposal']}", form, None),
+        ("post", f"/crm/proposals/{a['proposal']}/send", form, ""),
+        ("post", f"/crm/proposals/{a['proposal']}/reject", form, ""),
+        (
+            "post",
+            f"/crm/proposals/{a['proposal']}/accept",
+            form,
+            f"account_id={intruder_account.id}&payment_method=pix&first_due_date={today}",
+        ),
+        ("get", f"/api/v1/crm/leads/{a['lead']}", api, None),
+        ("post", f"/api/v1/crm/leads/{a['lead']}/convert", api, "{}"),
+        ("get", f"/api/v1/crm/deals/{a['deal']}", api, None),
+        (
+            "post",
+            f"/api/v1/crm/deals/{a['deal']}/stage",
+            api,
+            json.dumps({"stage_id": a["stage"]}),
+        ),
+        ("post", f"/api/v1/crm/deals/{a['deal']}/win", api, "{}"),
+        ("post", f"/api/v1/crm/deals/{a['deal']}/lose", api, json.dumps({"lost_reason": "X"})),
+        (
+            "post",
+            "/api/v1/crm/deals",
+            api,
+            json.dumps(
+                {"operation_key": str(uuid4()), "counterparty_id": a["contact"], "title": "X"}
+            ),
+        ),
+        (
+            "post",
+            "/api/v1/crm/activities",
+            api,
+            json.dumps({"type": "note", "subject": "X", "deal_id": a["deal"]}),
+        ),
+        ("post", f"/api/v1/crm/activities/{a['activity']}/complete", api, "{}"),
+        ("get", f"/api/v1/crm/proposals/{a['proposal']}", api, None),
+        ("post", f"/api/v1/crm/proposals/{a['proposal']}/send", api, "{}"),
+        (
+            "post",
+            f"/api/v1/crm/proposals/{a['proposal']}/accept",
+            api,
+            json.dumps(
+                {
+                    "operation_key": str(uuid4()),
+                    "account_id": str(intruder_account.id),
+                    "payment_method": "pix",
+                    "first_due_date": today,
+                }
+            ),
         ),
     ]
     client = RobynTestClient(app)

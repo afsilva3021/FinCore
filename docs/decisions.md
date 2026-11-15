@@ -28,3 +28,19 @@
 - **Bloqueio de segredo padrão:** `fincore` recusa iniciar quando `APP_HOST` não é local e `AUTH_SECRET` é o padrão ou tem menos de 32 caracteres.
 - **CHECK constraints com NOT VALID + VALIDATE (2026-11-06):** a migration `0017` não derruba bancos antigos com dados fora da regra; a constraint passa a valer para gravações novas e um `NOTICE` indica o que validar depois.
 - **Paginação por página (offset) nas telas HTML:** simples e suficiente para o volume esperado; a API mantém `limit`/`offset`. Cursor por data pode substituir se as tabelas crescerem muito.
+
+## CRM (2026-11-15)
+
+- **Contato do CRM é o `Counterparty` existente:** negociações e propostas usam o mesmo cadastro de clientes/fornecedores dos títulos, sem tabela nova de contas e sem hierarquia empresa/pessoa. Vincular um lead a um contato que era só fornecedor o marca também como cliente. Reversível: uma hierarquia pode ser acrescentada depois por migration aditiva.
+- **Lead é entidade separada do contato:** lead não qualificado não polui o cadastro usado no financeiro; só entra como contato na conversão.
+- **Ganho/perda são situações da negociação, não etapas do funil** (modelo de Pipedrive/RD Station), o que mantém a previsão ponderada só sobre negociações abertas.
+- **Etapas padrão criadas no primeiro uso do CRM** (`ensure_default_stages`, idempotente), em vez de migration de dados ou de acoplar o cadastro de organização ao CRM. Efeito colateral aceito: a primeira consulta de uma tela do CRM, mesmo por perfil somente leitura, grava as quatro etapas padrão.
+- **Qualificação:** para marcar um lead como qualificado exige-se necessidade confirmada e ao menos mais um dos critérios (orçamento, decisor, prazo). É uma escolha do FinCore; ajustável em `MIN_QUALIFICATION_SCORE`.
+- **Duplicidade na conversão:** mesmo e-mail ou mesmo nome (sem diferenciar maiúsculas) em contato da organização bloqueia a criação de contato novo; o usuário vincula ao existente. Não há fusão automática.
+- **Proposta aceita gera título, não transação:** respeita a regra de que título não movimenta caixa. O aceite chama `create_titles` com o contato da negociação (novo parâmetro opcional `counterparty_id`, aditivo) dentro da mesma transação que marca proposta e negociação. Não se cria lançamento contábil no aceite, igual a qualquer título cadastrado.
+- **Total da proposta é derivado** (itens − desconto); o total de cada linha é gravado na criação e a proposta não é editada depois, só descartada.
+- **Numeração de proposta sequencial por organização**, com bloqueio da linha da organização na transação e unicidade `(organization, number)` no banco.
+- **"Enviar proposta" é só registro:** não há provedor de e-mail/mensagens definido. E-mail e WhatsApp existem apenas como simuladores identificados em `/integrations`, sem rede.
+- **Negociação parada** = 14 dias sem mudar de etapa (`STALLED_AFTER_DAYS`), fixo por enquanto.
+- **Quadro sem arrastar e soltar:** mover etapa é um formulário com seletor, o que funciona sem JavaScript e com leitor de tela; limite de 300 negociações abertas no quadro.
+- **Pesquisa de referência:** as regras vieram de resumos de busca e comparativos sobre EspoCRM, SuiteCRM, Twenty, Odoo, ERPNext, Zoho, RD Station e Pipedrive; a documentação oficial desses produtos não foi lida por inteiro. Nenhum código foi copiado.

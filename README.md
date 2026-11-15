@@ -1,6 +1,6 @@
 # FinCore
 
-FinCore é uma aplicação web financeira e contábil completa em português (pt-BR). A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
+FinCore é uma aplicação web financeira, contábil e de CRM em português (pt-BR). A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
 
 Este README serve como visão de produto e guia reproduzível para desenvolvedores e agentes de código. Leia também [AGENTS.md](AGENTS.md), que define invariantes e o fluxo obrigatório de implementação, e `docs/`, que contém contratos e decisões detalhados.
 
@@ -13,6 +13,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - **Idempotência:** movimentações, títulos e baixas aceitam reenvio com a mesma `operation_key` sem duplicar — inclusive em envios simultâneos.
 - **Multiempresa e perfis:** isolamento por organização testado em todas as rotas com ID; perfis Proprietário, Financeiro e Somente leitura.
 - **Segurança:** Argon2id, limite de tentativas de login, logout que revoga a sessão, CSRF, CSP sem scripts inline e banco acessível só por um usuário sem permissão de DDL.
+- **CRM ligado ao financeiro:** leads, funil de negociações, atividades e propostas; o aceite da proposta gera títulos a receber parcelados, sem movimentar caixa antes da baixa.
 - **Sugestão de categoria por aprendizado:** um classificador Naive Bayes aprende com os lançamentos da própria organização e sugere a categoria pela descrição, sem serviço externo.
 - **Arquitetura verificada:** regras financeiras puras em `domain/` e testes que falham se a apresentação consultar o banco direto.
 
@@ -27,8 +28,12 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 | Plano de contas e diário contábil | Membros e perfis de acesso |
 | ![Tema escuro](docs/screenshots/07-dashboard-tema-escuro.png) | ![Celular, perfil somente leitura](docs/screenshots/08-celular-somente-leitura.png) |
 | Tema escuro | Celular, perfil somente leitura |
+| ![Painel comercial do CRM](docs/screenshots/09-crm-painel.png) | ![Quadro de negociações](docs/screenshots/10-crm-negociacoes.png) |
+| CRM: painel comercial | CRM: negociações por etapa do funil |
+| ![Proposta aceita com títulos gerados](docs/screenshots/11-crm-proposta-aceita.png) | |
+| CRM: proposta aceita e títulos a receber gerados | |
 
-As telas usam a organização fictícia criada por `fincore-seed-demo`.
+As telas usam a organização fictícia criada por `fincore-seed-demo` (as do CRM, os mesmos dados fictícios num banco de teste).
 </details>
 
 ### Por que Robyn?
@@ -41,9 +46,10 @@ O Robyn é um framework web Python com servidor em Rust, assíncrono e com pouca
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0018`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- Migrations versionadas até `0020`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
-- Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
+- Pix, boletos, cartões, webhooks, Open Finance e as mensagens do CRM (e-mail, WhatsApp) são somente simuladores locais. Não enviam pagamentos nem mensagens e não acessam provedores.
+- O CRM (leads, negociações, atividades, propostas) é funcional e persistido; ele não envia e-mail, WhatsApp nem campanhas.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
 - O modelo de títulos é separado das transações. O cadastro de título não altera o extrato ou saldos; sua baixa cria uma movimentação vinculada.
 
@@ -53,6 +59,8 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-15 | **Revisão de segurança antes da entrega do CRM:** valor decimal gigante na API do CRM respondia `500` (agora `400`); mensagens de sucesso na URL passam a ser códigos conhecidos no CRM e lista fechada em `/contacts` (antes, texto livre na URL aparecia como aviso da aplicação); uma negociação aceita só uma proposta (evita gerar títulos em dobro); caractere NUL em formulários e JSON é descartado/recusado em vez de causar `500` em qualquer rota. `bandit` e `pip-audit` sem achados novos. |
+| 2026-11-15 | **CRM:** leads com qualificação e conversão em contato/negociação (com checagem de duplicidade), funil com etapas configuráveis e probabilidade, negociações com ganho/perda e histórico, atividades, propostas com itens e painel comercial (conversão, taxa de ganho, previsão ponderada, ciclo médio, negociações paradas). O aceite da proposta gera títulos a receber parcelados de forma atômica e idempotente, sem movimentar caixa. API JSON `/api/v1/crm` com OpenAPI. Simuladores identificados de e-mail e WhatsApp. Migrations `0019` e `0020`. Regras em [docs/crm.md](docs/crm.md). |
 | 2026-11-06 | Sugestão de categoria por aprendizado com o histórico (Naive Bayes, sem serviço externo), comando `fincore-seed-demo`, screenshots no README e ações de escrita escondidas para o perfil somente leitura. Correção: o painel "Saldos por conta" da visão geral sempre dizia "Nenhuma conta cadastrada" (a rota não enviava os saldos ao template); o perfil exibia "Administrador" fixo. |
 | 2026-11-06 | API JSON de títulos (`/api/v1/titles`: listar, detalhar, cadastrar com parcelas, baixar, cancelar) com idempotência por `operation_key` e especificação OpenAPI em `docs/openapi.yaml`. Correção: reenvio de baixa com chave de outra organização agora é conflito `409` em vez de devolver a baixa alheia. Migration `0018`. |
 | 2026-11-06 | Arquitetura: `web.py` (2.600 linhas) dividido em `presentation/routes/` por área; decorators `login_required`/`api_login_required` no lugar de 43 blocos repetidos; todas as consultas das rotas movidas para `application/queries.py` (inclusive o N+1 restante da conciliação); testes de arquitetura. |
@@ -160,11 +168,25 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
 - Totais de receitas e despesas (visão geral e relatórios) consideram só movimentos liquidados e abatem estornos da natureza do movimento original; o estorno entra no período da sua própria data. Transferências não entram nesses totais.
 - Limites OFX: não processa OFX 2.x XML, múltiplas contas no mesmo arquivo, conversão de moeda ou upload multipart.
 
+### CRM
+
+Páginas em `/crm` (grupo **CRM** do menu). Regras completas em [docs/crm.md](docs/crm.md).
+
+- **Leads** (`/crm/leads`): cadastro com origem e valor estimado, quatro critérios de qualificação (necessidade, orçamento, decisor, prazo), desqualificação com motivo e conversão.
+- **Conversão de lead:** cria um contato novo ou vincula a um existente (recusa duplicar contato com o mesmo nome ou e-mail) e, se pedido, abre uma negociação. É atômica e não pode ser repetida.
+- **Negociações** (`/crm/deals`): quadro por etapa do funil, valor, previsão de fechamento, ganho/perda (perda exige motivo), reabertura e histórico de quem mudou o quê. Negociação sem mudar de etapa há mais de 14 dias aparece como parada.
+- **Funil** (`/crm/stages`): etapas, ordem e probabilidade de ganho configuráveis por organização; ganho e perda são situações, não etapas.
+- **Atividades** (`/crm/activities`): tarefas, ligações, reuniões, e-mails e notas ligadas a um lead, negociação ou contato, com prazo e conclusão.
+- **Propostas** (`/crm/proposals`): numeradas por organização, com itens, desconto e validade. **O aceite gera títulos a receber** (à vista ou parcelados, somando exatamente o total) para o contato da negociação e marca a negociação como ganha — tudo numa transação. Como todo título, isso não movimenta caixa nem aparece no extrato até a baixa em Contas a receber.
+- **Painel comercial** (`/crm`): conversão de leads, taxa de ganho, previsão ponderada pela probabilidade da etapa, ciclo médio de venda e negociações paradas. Previsão e valor ganho são indicadores comerciais, não receita realizada.
+- Limites: o CRM não envia e-mail, WhatsApp nem campanhas; "enviar proposta" só registra que ela foi apresentada. Não há funis múltiplos, automações, campos personalizados nem arrastar e soltar no quadro.
+
 ### API e demonstrações
 
 - API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias e transações (listar, consultar, criar, liquidar e estornar), com paginação e isolamento por organização.
-- Títulos são operados pelas páginas HTML `/payables` e `/receivables`; ainda não há API JSON de títulos.
-- `/integrations` permite executar simuladores locais de Pix, boleto, cartão, webhook e Open Finance.
+- API JSON de títulos em `/api/v1/titles` (listar, detalhar, cadastrar com parcelas, baixar e cancelar), além das páginas `/payables` e `/receivables`.
+- API JSON do CRM em `/api/v1/crm` (leads e conversão, etapas, negociações, atividades, propostas com aceite e indicadores), com idempotência por `operation_key`.
+- `/integrations` permite executar simuladores locais de Pix, boleto, cartão, webhook, Open Finance e das mensagens do CRM (e-mail e WhatsApp fictícios).
 - Contratos e rotas: [docs/api.md](docs/api.md). Limites de integrações: [docs/external-integrations.md](docs/external-integrations.md).
 
 ## Modelo de dados e regras entre módulos
@@ -184,6 +206,11 @@ Os modelos Tortoise estão em `src/fincore/infrastructure/models.py`; migrations
 | `JournalEntry`, `JournalEntryLine` | Cabeçalho e linhas de débito/crédito; efetivação e estorno rastreáveis |
 | `ImportedStatementTransaction` | Linha importada de OFX e identidade externa por conta/FITID |
 | `ReconciliationMatch`, `ReconciliationEvent` | Vínculo com transação interna e trilha de conciliar/desconciliar |
+| `CrmPipelineStage` | Etapa do funil da organização, com ordem e probabilidade de ganho |
+| `CrmLead` | Lead com origem, qualificação e vínculo ao contato/negociação gerados na conversão |
+| `CrmDeal`, `CrmDealEvent` | Negociação com um `Counterparty` numa etapa; eventos registram quem mudou etapa/situação |
+| `CrmActivity` | Atividade ligada a exatamente um lead, negociação ou contato |
+| `CrmProposal`, `CrmProposalItem` | Proposta numerada com itens; `first_title` aponta para o primeiro `FinancialTitle` gerado no aceite |
 
 As regras contábeis, estados e invariantes estão detalhados em [docs/accounting.md](docs/accounting.md), [docs/requirements.md](docs/requirements.md) e [AGENTS.md](AGENTS.md). Não criar um campo de saldo editável como fonte da verdade; derive valores realizados dos movimentos/diário. Datas de competência, vencimento e liquidação representam conceitos diferentes.
 
@@ -266,7 +293,7 @@ curl http://127.0.0.1:8080/health
 
 ### Dados de demonstração (opcional)
 
-Para explorar o sistema ou montar uma demo pública, crie uma organização fictícia com três meses de movimentos, títulos parcelados, uma baixa parcial e um usuário somente leitura:
+Para explorar o sistema ou montar uma demo pública, crie uma organização fictícia com três meses de movimentos, títulos parcelados, uma baixa parcial, um funil de CRM (leads, negociações, atividades e uma proposta aceita) e um usuário somente leitura:
 
 ```bash
 FINCORE_ALLOW_DEMO_SEED=1 uv run fincore-seed-demo
@@ -352,14 +379,16 @@ node --check static/js/app.js
 ```text
 src/fincore/
   app.py                         inicialização Robyn, health e lifecycle ORM
-  domain/                        regras puras (sem banco/framework): dinheiro, partidas dobradas, títulos
+  domain/                        regras puras (sem banco/framework): dinheiro, partidas dobradas, títulos, CRM
   application/                   casos de uso: buscam dados, aplicam as regras do domain e gravam
   config/                        variáveis de ambiente e conexão ORM
   infrastructure/                 modelos Tortoise e migrations versionadas
   infrastructure/db_roles.py     usuário restrito do banco usado pelo container app
-  application/queries.py         consultas de leitura usadas pelas telas e pela API
+  application/queries.py         consultas de leitura usadas pelas telas e pela API (inclui indicadores do CRM)
+  application/crm.py             casos de uso do CRM: funil, leads, negociações e atividades
+  application/crm_proposals.py   propostas e geração de títulos a receber no aceite
   presentation/web.py            sessão, CSRF, templates, paginação e decorators de login
-  presentation/routes/           rotas HTTP, um arquivo por área (finance, accounting, api...)
+  presentation/routes/           rotas HTTP, um arquivo por área (finance, accounting, crm, api, api_crm...)
 templates/                        templates Jinja/Bootstrap por módulo
 static/css/                       tema claro/escuro e estilos de interface
 static/js/                        drawer, confirmações modais e interações
@@ -379,4 +408,5 @@ tests/integration/                persistência PostgreSQL e fluxos HTTP
 - `docs/decisions.md`: decisões técnicas e limitações conhecidas.
 - `docs/api.md`: rotas HTML e contrato JSON.
 - `docs/accounting.md`: regras de partidas dobradas.
+- `docs/crm.md`: regras do CRM, estados, indicadores e ponte com contas a receber.
 - `docs/external-integrations.md`: como planejar integrações futuras.

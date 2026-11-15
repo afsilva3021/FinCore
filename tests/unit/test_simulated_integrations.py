@@ -18,6 +18,14 @@ def test_open_finance_simulates_consent_without_amount() -> None:
     assert simulate_adapter("open_finance").status == "simulated"
 
 
+@pytest.mark.parametrize("adapter", ["crm_email", "crm_whatsapp"])
+def test_crm_messaging_is_only_simulated_and_needs_no_amount(adapter: str) -> None:
+    result = simulate_adapter(adapter)
+    assert result.status == "simulated"
+    assert result.reference.startswith("DEMO-")
+    assert "envio de mensagem" in result.message
+
+
 def test_unknown_adapter_or_invalid_amount_is_rejected() -> None:
     with pytest.raises(ValueError):
         simulate_adapter("production")

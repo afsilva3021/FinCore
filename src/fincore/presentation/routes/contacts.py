@@ -27,6 +27,10 @@ from fincore.presentation.web import (
     login_required,
 )
 
+CONTACT_MESSAGES = frozenset(
+    {"Contato atualizado.", "Contato cadastrado.", "Contato reativado.", "Contato inativado."}
+)
+
 
 def register_counterparty_routes(app: object) -> None:
     async def render(
@@ -62,7 +66,10 @@ def register_counterparty_routes(app: object) -> None:
             return _redirect("/login")
         role = role_override or request.query_params.get("role", "all")
         status = request.query_params.get("status", "all")
+        # Só mensagens conhecidas: texto livre na URL permitiria forjar avisos na tela.
         message = request.query_params.get("message", "")
+        if message not in CONTACT_MESSAGES:
+            message = ""
         return await render(
             request,
             current[0],

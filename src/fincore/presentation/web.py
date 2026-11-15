@@ -128,6 +128,16 @@ def _format_tax_id(value: str | None) -> str:
 template_env.filters["format_tax_id"] = _format_tax_id
 
 
+def _format_brl(value: Decimal | None) -> str:
+    """Formata um Decimal no padrão brasileiro: 1.234,56."""
+    if value is None:
+        return "—"
+    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+template_env.filters["brl"] = _format_brl
+
+
 def _response(body: str, status: int = 200) -> Response:
     return Response(
         status_code=status,
@@ -284,7 +294,11 @@ async def _paginate(query, request: Request, *, keep: tuple[str, ...] = (), size
 
 def _form_data(request: Request) -> dict[str, str]:
     body = request.body.decode() if isinstance(request.body, bytes) else request.body
-    return {key: values[-1] for key, values in parse_qs(body or "", keep_blank_values=True).items()}
+    # NUL não é aceito em texto pelo PostgreSQL; removido aqui para não virar erro 500.
+    return {
+        key: values[-1].replace("\x00", "")
+        for key, values in parse_qs(body or "", keep_blank_values=True).items()
+    }
 
 
 def _page(template: str, **context: object) -> str:

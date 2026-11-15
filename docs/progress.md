@@ -184,3 +184,46 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Screenshots em `docs/screenshots/` capturados no Chromium a partir do seed (desktop 2x, tema escuro e celular).
 - [x] Corrigido: visão geral não exibia saldos por conta (variável `balances` nunca enviada); "Administrador" fixo no perfil; textos "até 100/200" após a paginação.
 - [ ] Demo online: depende de hospedagem e domínio do responsável pelo projeto.
+
+## CRM (2026-11-15)
+
+- [x] `domain/crm.py`: transições de lead, qualificação, funil, valor ponderado, negociação parada, totais e estados de proposta, indicadores — 23 testes unitários sem banco.
+- [x] Modelos `CrmPipelineStage`, `CrmLead`, `CrmDeal`, `CrmDealEvent`, `CrmActivity`, `CrmProposal`, `CrmProposalItem`; migration `0019` (gerada por `makemigrations`) e `0020` (15 `CHECK` constraints). Aplicadas no banco de teste; `makemigrations` responde `No changes detected`.
+- [x] Leads: cadastro, qualificação, desqualificação com motivo e conversão atômica em contato/negociação com recusa de contato duplicado (testado: falha na conversão não deixa contato órfão).
+- [x] Funil e negociações: etapas padrão e configuráveis, mover, ganhar, perder com motivo, reabrir, histórico por usuário; banco rejeita linhas inválidas.
+- [x] Atividades ligadas a exatamente um registro, com conclusão idempotente.
+- [x] Propostas: numeração sequencial sob concorrência, itens e desconto em `Decimal`, validade, envio (só registro), recusa e aceite.
+- [x] Aceite gera títulos a receber que somam exatamente o total, sem `FinancialTransaction` nem `JournalEntry`; cinco aceites simultâneos geram os títulos uma única vez; falha no aceite não altera proposta nem negociação; a baixa posterior segue o fluxo financeiro normal.
+- [x] Painel `/crm` e `GET /api/v1/crm/summary`: indicadores conferidos contra valores de referência e isolados por organização.
+- [x] Páginas `/crm`, `/crm/leads`, `/crm/deals`, `/crm/activities`, `/crm/stages`, `/crm/proposals` e detalhes; fluxo completo lead → proposta aceita testado por HTTP; perfil somente leitura recebe `403` nas escritas.
+- [x] API `/api/v1/crm` (21 rotas) com idempotência por `operation_key`; chave de outra organização = `409`; `docs/openapi.yaml` validado com `openapi-spec-validator`.
+- [x] Teste de isolamento ampliado: organização B tenta 32 rotas do CRM (HTML e API) com IDs de A; nada vaza nem muda.
+- [x] Simuladores identificados de e-mail e WhatsApp do CRM em `/integrations` (sem rede).
+- [x] `fincore-seed-demo` inclui funil fictício; a parte do CRM é testada numa organização nova.
+- [x] Servidor real iniciado contra o banco de teste e cinco telas do CRM conferidas no Firefox headless (screenshots `09` a `11`).
+- [ ] Migrations `0019`/`0020` **não** foram aplicadas no banco de desenvolvimento (`127.0.0.1:5433`): rode `uv run tortoise -c fincore.config.database.TORTOISE_ORM migrate` (ou `docker compose up -d --build`) antes de abrir o CRM.
+- [ ] `fincore-seed-demo` completo não foi reexecutado (o banco de teste já tem o usuário de demonstração e o comando recusa segunda execução); só a parte do CRM foi validada isoladamente.
+- [ ] Imagem Docker não reconstruída nesta entrega.
+
+Pendências conhecidas do CRM: envio real de e-mail/mensagens (sem provedor definido), funis múltiplos, automações, campos personalizados, importação de leads, responsável diferente do criador, arrastar e soltar no quadro, PDF da proposta e edição de proposta em rascunho.
+
+Próximo passo sugerido: definir se o responsável (`owner`) de leads e negociações deve ser atribuível a outros membros e se o prazo de "negociação parada" deve ser configurável por organização.
+
+## Revisão de segurança do CRM (2026-11-15)
+
+Revisão manual do diff (isolamento por organização, CSRF, XSS, redirecionamentos, entradas hostis, concorrência) mais `bandit` e `pip-audit`.
+
+- [x] Corrigido: `amount`/`estimated_value`/`discount` com dezenas de dígitos na API do CRM lançava `decimal.InvalidOperation` e respondia `500`; o limite agora é conferido antes do arredondamento (`400`).
+- [x] Corrigido: `?message=` aceitava texto livre e o exibia como aviso de sucesso (content spoofing; o HTML já era escapado, não havia XSS). No CRM a URL leva só um código de `MESSAGES`; em `/contacts` (pré-existente) só mensagens de uma lista fechada.
+- [x] Corrigido: duas propostas da mesma negociação podiam ser aceitas, gerando títulos a receber em dobro.
+- [x] Corrigido (todas as rotas, pré-existente): caractere NUL em campo de formulário ou JSON chegava ao PostgreSQL e terminava em `500`; formulários descartam o NUL e a API responde `400`.
+- [x] Testes de regressão para os quatro itens; suíte completa com 206 testes passando.
+- [x] `pip-audit` sobre o `uv.lock`: nenhuma vulnerabilidade conhecida. `bandit`: só quatro avisos de baixa severidade em código anterior (senha fictícia do seed, texto da política de senha, chave de desenvolvimento já bloqueada fora do ambiente local, `xml.sax.saxutils.escape` usado para escapar texto no PDF).
+- [x] Sem achados em: isolamento por organização (32 rotas do CRM testadas com IDs de outra organização), CSRF em todo POST, autoescape dos templates, redirecionamentos (só caminhos montados no servidor), SQL (ORM parametrizado; SQL das migrations só com constantes).
+
+Riscos conhecidos, não alterados nesta entrega:
+
+- Bootstrap e Font Awesome vêm de CDN sem Subresource Integrity (limitado pela CSP a `cdn.jsdelivr.net`/`cdnjs.cloudflare.com`).
+- Não há limite de requisições por usuário fora do login.
+- Listas de seleção de contatos nas telas do CRM não são paginadas.
+- Abrir uma tela do CRM pela primeira vez grava as etapas padrão do funil, mesmo com perfil somente leitura.

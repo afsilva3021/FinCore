@@ -1,0 +1,35 @@
+{% extends "finance/layout.html" %}
+{% block title %}Painel comercial · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · INDICADORES</span><h1>Painel comercial</h1><p>Funil, conversão e previsão calculados a partir dos leads e negociações de {{ organization.name }}.</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/crm/leads">Leads</a><a class="btn btn-primary" href="/crm/deals">Negociações</a></div>
+</div>
+<div class="section-heading"><div><h2>Em andamento</h2><p>Previsão é estimativa: valor de cada negociação aberta × probabilidade da etapa. Não é receita realizada.</p></div></div>
+<section class="metrics-grid" aria-label="Indicadores comerciais em andamento">
+  <article class="metric-card"><div class="metric-top"><span>Negociações em aberto</span><span class="metric-icon blue">▥</span></div><strong class="metric-value">{{ summary.open_count }}</strong><small>R$ {{ summary.open_total|brl }} em valor total</small></article>
+  <article class="metric-card"><div class="metric-top"><span>Previsão ponderada</span><span class="metric-icon violet">◷</span></div><strong class="metric-value">R$ {{ summary.forecast|brl }}</strong><small>Estimativa pelo estágio do funil</small></article>
+  <article class="metric-card"><div class="metric-top"><span>Negociações paradas</span><span class="metric-icon coral">!</span></div><strong class="metric-value">{{ summary.stalled_count }}</strong><small>Sem mudar de etapa há mais de {{ stalled_days }} dias</small></article>
+  <article class="metric-card"><div class="metric-top"><span>Atividades pendentes</span><span class="metric-icon mint">✓</span></div><strong class="metric-value">{{ summary.pending_activities }}</strong><small>{{ summary.overdue_activities }} atrasada(s) · {{ summary.proposals_waiting }} proposta(s) aguardando resposta</small></article>
+</section>
+<div class="section-heading"><div><h2>Resultados</h2><p>Calculados sobre leads cadastrados e negociações encerradas.</p></div></div>
+<section class="metrics-grid" aria-label="Indicadores comerciais de resultado">
+  <article class="metric-card"><div class="metric-top"><span>Conversão de leads</span><span class="metric-icon blue">✦</span></div><strong class="metric-value">{% if summary.lead_conversion is not none %}{{ summary.lead_conversion|string|replace('.', ',') }}%{% else %}—{% endif %}</strong><small>{{ summary.leads_by_status.get('converted', 0) }} de {{ summary.leads_total }} lead(s) convertidos</small></article>
+  <article class="metric-card"><div class="metric-top"><span>Taxa de ganho</span><span class="metric-icon mint">↗</span></div><strong class="metric-value">{% if summary.win_rate is not none %}{{ summary.win_rate|string|replace('.', ',') }}%{% else %}—{% endif %}</strong><small>{{ summary.won_count }} ganha(s) · {{ summary.lost_count }} perdida(s)</small></article>
+  <article class="metric-card"><div class="metric-top"><span>Valor ganho</span><span class="metric-icon mint">＋</span></div><strong class="metric-value">R$ {{ summary.won_total|brl }}</strong><small>Soma das negociações ganhas (não é caixa recebido)</small></article>
+  <article class="metric-card"><div class="metric-top"><span>Ciclo médio de venda</span><span class="metric-icon violet">◷</span></div><strong class="metric-value">{% if summary.average_cycle_days is not none %}{{ summary.average_cycle_days|string|replace('.', ',') }} dias{% else %}—{% endif %}</strong><small>Da criação ao ganho</small></article>
+</section>
+<section class="dashboard-lower real-data-panels">
+  <article class="panel-card"><div class="panel-heading"><div><h3>Funil por etapa</h3><p>Negociações em aberto em cada etapa</p></div><a class="panel-action" href="/crm/stages">Configurar etapas →</a></div>
+    {% if summary.stages %}<div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Etapa</th><th class="text-end">Qtd.</th><th class="text-end">Valor</th><th class="text-end">Prob.</th><th class="text-end">Ponderado</th></tr></thead><tbody>
+    {% for item in summary.stages %}<tr><td><strong>{{ item.stage.name }}</strong>{% if not item.stage.is_active %} <span class="badge text-bg-secondary">inativa</span>{% endif %}</td><td class="text-end">{{ item.count }}</td><td class="text-end">R$ {{ item.total|brl }}</td><td class="text-end">{{ item.stage.win_probability }}%</td><td class="text-end">R$ {{ item.weighted|brl }}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<div class="finance-empty"><span>▥</span><strong>Nenhuma etapa cadastrada</strong></div>{% endif %}
+  </article>
+  <article class="panel-card"><div class="panel-heading"><div><h3>Negociações paradas</h3><p>As mais antigas sem movimentação</p></div><a class="panel-action" href="/crm/deals">Ver quadro →</a></div>
+    {% if summary.stalled %}<div class="recent-list">{% for deal in summary.stalled %}<a class="recent-row text-decoration-none" href="/crm/deals/{{ deal.id }}"><span class="recent-icon coral">!</span><span class="recent-copy"><strong>{{ deal.title }}</strong><small>{{ deal.counterparty.name }} · {{ deal.stage.name }} desde {{ deal.stage_changed_at.strftime('%d/%m/%Y') }}</small></span><span class="recent-amount">R$ {{ deal.amount|brl }}</span></a>{% endfor %}</div>{% else %}<div class="finance-empty"><span>✓</span><strong>Nenhuma negociação parada</strong><small>Negociações abertas mudaram de etapa nos últimos {{ stalled_days }} dias.</small></div>{% endif %}
+  </article>
+</section>
+<article class="panel-card mt-3"><div class="panel-heading"><div><h3>Leads por situação</h3><p>Todos os leads cadastrados</p></div><a class="panel-action" href="/crm/leads?status=all">Ver leads →</a></div>
+  <div class="crm-chip-row">{% for key, label in lead_status_labels.items() %}<a class="crm-chip" href="/crm/leads?status={{ key }}"><strong>{{ summary.leads_by_status.get(key, 0) }}</strong> {{ label }}</a>{% endfor %}</div>
+</article>
+{% endblock %}

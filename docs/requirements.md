@@ -38,3 +38,21 @@ Autenticação, organizações, lançamentos, plano de contas, integrações ban
 - Páginas funcionam em telas móveis e desktop, com mensagens em pt-BR, estados vazios e navegação clara.
 - Funcionalidade simulada ou ainda não liberada deve ser identificada; não apresentar indicadores fictícios como dados reais.
 - Módulos planejados: gestão financeira, contabilidade, conciliação, dashboard e relatórios. Pix, boletos, cartões, webhooks e Open Finance permanecem em sandbox até haver provedor e requisitos definidos.
+
+## CRM
+
+- Como vendedor, cadastro um lead com origem e valor estimado, registro os critérios de qualificação e o converto em contato e negociação sem duplicar contatos.
+- Como vendedor, acompanho negociações por etapa do funil, movo de etapa, marco ganho ou perda (com motivo) e vejo o histórico de quem alterou.
+- Como vendedor, registro tarefas, ligações, reuniões, e-mails e notas ligadas a um lead, negociação ou contato e concluo as pendentes.
+- Como vendedor, monto uma proposta com itens, desconto e validade; ao registrar o aceite, o sistema gera os títulos a receber parcelados para o financeiro.
+- Como gestor, vejo conversão de leads, taxa de ganho, previsão ponderada, ciclo médio e negociações paradas.
+
+Critérios de aceite:
+
+- Conversão de lead é atômica, única e recusa contato duplicado por nome ou e-mail.
+- Negociação encerrada não muda de etapa; perda exige motivo; toda mudança registra usuário e horário.
+- Aceite de proposta gera títulos que somam exatamente o total, não movimenta caixa, e reenvios (inclusive simultâneos) não duplicam títulos.
+- Proposta não enviada, vencida ou recusada não pode ser aceita.
+- Indicadores batem com valores de referência calculados no teste e não misturam organizações.
+- Perfil somente leitura consulta, mas não altera; dados de outra organização não são lidos nem alterados por ID.
+- O CRM não envia e-mail nem mensagens; qualquer envio é simulação identificada.

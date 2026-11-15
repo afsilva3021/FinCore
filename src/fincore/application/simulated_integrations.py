@@ -4,7 +4,17 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import uuid4
 
-SUPPORTED_ADAPTERS = {"pix", "boleto", "card", "webhook", "open_finance"}
+SUPPORTED_ADAPTERS = {
+    "pix",
+    "boleto",
+    "card",
+    "webhook",
+    "open_finance",
+    "crm_email",
+    "crm_whatsapp",
+}
+# Adapters que não envolvem valor monetário.
+NO_AMOUNT_ADAPTERS = {"open_finance", "crm_email", "crm_whatsapp"}
 
 
 @dataclass(frozen=True)
@@ -20,7 +30,7 @@ def simulate_adapter(adapter: str, amount: Decimal | None = None) -> SimulationR
     """Produces a fake result for UI/contracts without network or payment side effects."""
     if adapter not in SUPPORTED_ADAPTERS:
         raise ValueError("Selecione um adapter de demonstração disponível.")
-    if adapter != "open_finance" and (
+    if adapter not in NO_AMOUNT_ADAPTERS and (
         amount is None
         or not amount.is_finite()
         or amount <= 0
@@ -33,13 +43,16 @@ def simulate_adapter(adapter: str, amount: Decimal | None = None) -> SimulationR
         "card": "Autorização de cartão simulada",
         "webhook": "Evento de webhook fictício",
         "open_finance": "Consentimento de Open Finance fictício",
+        "crm_email": "E-mail comercial fictício (CRM)",
+        "crm_whatsapp": "Mensagem de WhatsApp fictícia (CRM)",
     }
     return SimulationResult(
         adapter=adapter,
         reference=f"DEMO-{uuid4().hex[:12].upper()}",
         status="simulated",
         message=(
-            f"{names[adapter]} gerado localmente. Nenhum pagamento ou compartilhamento ocorreu."
+            f"{names[adapter]} gerado localmente. "
+            "Nenhum pagamento, envio de mensagem ou compartilhamento ocorreu."
         ),
         amount=amount,
     )

@@ -14,6 +14,8 @@ from fincore.presentation.routes import (
     register_accounting_routes,
     register_api_routes,
     register_counterparty_routes,
+    register_crm_api_routes,
+    register_crm_routes,
     register_demo_integration_routes,
     register_finance_routes,
     register_member_routes,
@@ -79,6 +81,8 @@ register_report_routes(app)
 register_demo_integration_routes(app)
 register_api_routes(app)
 register_title_api_routes(app)
+register_crm_routes(app)
+register_crm_api_routes(app)
 
 
 def main() -> None:

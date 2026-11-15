@@ -5,8 +5,8 @@
     <a class="brand sidebar-brand" href="/dashboard"><span class="brand-mark">F</span><span>FinCore</span></a>
     <div class="org-switch"><span class="org-avatar">{{ organization.name[:1]|upper }}</span><span class="org-copy"><strong>{{ organization.name }}</strong><small>Organização</small></span></div>
     <nav class="main-nav" aria-label="Navegação principal">
-      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="true" aria-controls="nav-finance"><span>FINANÇAS</span><i aria-hidden="true">⌄</i></button>
-      <div class="nav-group" id="nav-finance">
+      {% set crm_nav = (active or '').startswith('crm') %}<button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="{{ 'false' if crm_nav else 'true' }}" aria-controls="nav-finance"><span>FINANÇAS</span><i aria-hidden="true">⌄</i></button>
+      <div class="nav-group" id="nav-finance" {% if crm_nav %}hidden{% endif %}>
         <a class="nav-link {% if active == 'dashboard' %}active{% endif %}" href="/dashboard"><span>▦</span> Visão geral</a>
         <a class="nav-link {% if active == 'transactions' %}active{% endif %}" href="/transactions"><span>⇄</span> Transações</a>
         <a class="nav-link {% if active == 'payables' %}active{% endif %}" href="/payables"><span>↘</span> Contas a pagar</a>
@@ -15,6 +15,14 @@
         <a class="nav-link {% if active == 'categories' %}active{% endif %}" href="/categories"><span>◈</span> Categorias</a>
         <a class="nav-link {% if active == 'customers' %}active{% endif %}" href="/customers"><span>♙</span> Clientes</a>
         <a class="nav-link {% if active == 'suppliers' %}active{% endif %}" href="/suppliers"><span>▣</span> Fornecedores</a>
+      </div>
+      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="{{ 'true' if crm_nav else 'false' }}" aria-controls="nav-crm"><span>CRM</span><i aria-hidden="true">⌄</i></button>
+      <div class="nav-group" id="nav-crm" {% if not crm_nav %}hidden{% endif %}>
+        <a class="nav-link {% if active == 'crm' %}active{% endif %}" href="/crm"><span>◎</span> Painel comercial</a>
+        <a class="nav-link {% if active == 'crm-leads' %}active{% endif %}" href="/crm/leads"><span>✦</span> Leads</a>
+        <a class="nav-link {% if active == 'crm-deals' %}active{% endif %}" href="/crm/deals"><span>▥</span> Negociações</a>
+        <a class="nav-link {% if active == 'crm-activities' %}active{% endif %}" href="/crm/activities"><span>✓</span> Atividades</a>
+        <a class="nav-link {% if active == 'crm-proposals' %}active{% endif %}" href="/crm/proposals"><span>▤</span> Propostas</a>
       </div>
       <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-management"><span>GESTÃO</span><i aria-hidden="true">⌄</i></button>
       <div class="nav-group" id="nav-management" hidden>

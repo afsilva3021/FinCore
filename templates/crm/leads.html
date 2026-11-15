@@ -1,0 +1,69 @@
+{% extends "finance/layout.html" %}
+{% block title %}Leads · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · PROSPECÇÃO</span><h1>Leads</h1><p>Registre contatos comerciais, qualifique e converta em contato e negociação.</p></div>
+  <div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="lead-drawer" aria-expanded="false">＋ Novo lead</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error and not open_drawer %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<article class="panel-card transactions-table-card">
+  <form method="get" action="/crm/leads" class="title-filters mb-3">
+    <div><label class="form-label" for="lead-search">Busca</label><input class="form-control" id="lead-search" name="q" maxlength="120" value="{{ search }}" placeholder="Nome, empresa ou e-mail"></div>
+    <div><label class="form-label" for="lead-status">Situação</label><select class="form-select" id="lead-status" name="status"><option value="active" {% if status == 'active' %}selected{% endif %}>Em andamento</option><option value="all" {% if status == 'all' %}selected{% endif %}>Todas</option>{% for key, label in status_labels.items() %}<option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/crm/leads">Limpar</a></div>
+  </form>
+  {% if leads %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Lead</th><th>Contato</th><th>Origem</th><th class="text-end">Valor estimado</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+  {% for lead in leads %}
+    <tr>
+      <td><strong>{{ lead.name }}</strong>{% if lead.company_name %}<small class="d-block text-secondary">{{ lead.company_name }}</small>{% endif %}<small class="d-block text-secondary">Desde {{ lead.created_at.strftime('%d/%m/%Y') }}</small></td>
+      <td>{{ lead.email or '—' }}<small class="d-block text-secondary">{{ lead.phone or 'Sem telefone' }}</small></td>
+      <td>{{ source_labels.get(lead.source, lead.source) }}</td>
+      <td class="text-end">{% if lead.estimated_value is not none %}R$ {{ lead.estimated_value|brl }}{% else %}—{% endif %}</td>
+      <td><span class="badge crm-status crm-status-{{ lead.status }}">{{ status_labels.get(lead.status, lead.status) }}</span><small class="d-block text-secondary">Qualificação {{ scores[lead.id] }}/4</small>{% if lead.disqualified_reason %}<small class="d-block text-secondary">{{ lead.disqualified_reason }}</small>{% endif %}</td>
+      <td>
+        {% if lead.status == 'converted' %}
+          {% if lead.converted_deal_id %}<a class="btn btn-sm btn-outline-primary" href="/crm/deals/{{ lead.converted_deal_id }}">Ver negociação</a>{% else %}<span class="text-secondary small">Convertido em contato</span>{% endif %}
+        {% else %}
+        <div class="d-flex gap-2 flex-wrap">
+          {% if lead.status != 'disqualified' and can_write() %}<a class="btn btn-sm btn-primary" href="/crm/leads/{{ lead.id }}/convert">Converter</a>{% endif %}
+          <details class="crm-inline-form"><summary class="btn btn-sm btn-outline-secondary">Qualificar</summary>
+            <form method="post" action="/crm/leads/{{ lead.id }}/update" class="crm-inline-panel"><input type="hidden" name="csrf" value="{{ csrf }}">
+              <fieldset><legend class="form-label">Critérios confirmados</legend>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="need-{{ lead.id }}" name="has_need" value="true" {% if lead.has_need %}checked{% endif %}><label class="form-check-label" for="need-{{ lead.id }}">Necessidade</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="budget-{{ lead.id }}" name="has_budget" value="true" {% if lead.has_budget %}checked{% endif %}><label class="form-check-label" for="budget-{{ lead.id }}">Orçamento</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="authority-{{ lead.id }}" name="has_authority" value="true" {% if lead.has_authority %}checked{% endif %}><label class="form-check-label" for="authority-{{ lead.id }}">Fala com o decisor</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="timeline-{{ lead.id }}" name="has_timeline" value="true" {% if lead.has_timeline %}checked{% endif %}><label class="form-check-label" for="timeline-{{ lead.id }}">Prazo definido</label></div>
+              </fieldset>
+              <div><label class="form-label" for="status-{{ lead.id }}">Situação</label><select class="form-select form-select-sm" id="status-{{ lead.id }}" name="status">{% for key, label in status_labels.items() %}{% if key != 'converted' %}<option value="{{ key }}" {% if lead.status == key %}selected{% endif %}>{{ label }}</option>{% endif %}{% endfor %}</select></div>
+              <div><label class="form-label" for="reason-{{ lead.id }}">Motivo (se desqualificar)</label><input class="form-control form-control-sm" id="reason-{{ lead.id }}" name="disqualified_reason" maxlength="240" value="{{ lead.disqualified_reason or '' }}"></div>
+              <button class="btn btn-primary btn-sm" type="submit">Salvar</button>
+            </form>
+          </details>
+        </div>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>✦</span><strong>Nenhum lead encontrado</strong><small>{% if search or status != 'active' %}Ajuste os filtros para consultar outros leads.{% else %}Cadastre um lead para começar a acompanhar a prospecção.{% endif %}</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="lead-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="lead-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">NOVO LEAD</span><h2 id="lead-drawer-title">Cadastrar lead</h2><p>O lead ainda não é cliente; ele vira contato na conversão.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/crm/leads" class="movement-drawer-form" data-movement-form><input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if error and open_drawer %}<div class="alert alert-danger mx-4 mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="lead-name">Nome da pessoa</label><input class="form-control" id="lead-name" name="name" maxlength="160" value="{{ form.get('name','') }}" required></div>
+      <div><label class="form-label" for="lead-company">Empresa <small class="text-secondary">(opcional)</small></label><input class="form-control" id="lead-company" name="company_name" maxlength="160" value="{{ form.get('company_name','') }}"></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="lead-email">E-mail</label><input class="form-control" id="lead-email" name="email" type="email" maxlength="254" value="{{ form.get('email','') }}"></div><div><label class="form-label" for="lead-phone">Telefone</label><input class="form-control" id="lead-phone" name="phone" maxlength="40" value="{{ form.get('phone','') }}"></div></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="lead-source">Origem</label><select class="form-select" id="lead-source" name="source">{% for key, label in source_labels.items() %}<option value="{{ key }}" {% if form.get('source','other') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div><label class="form-label" for="lead-value">Valor estimado</label><div class="input-group"><span class="input-group-text">R$</span><input class="form-control" id="lead-value" name="estimated_value" inputmode="decimal" placeholder="0,00" value="{{ form.get('estimated_value','') }}"></div></div></div>
+      <div><label class="form-label" for="lead-notes">Observações</label><textarea class="form-control" id="lead-notes" name="notes" rows="3" maxlength="2000">{{ form.get('notes','') }}</textarea></div>
+    </div>
+    <div class="movement-drawer-footer"><span>Cadastrar lead não cria contato nem título.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Adicionar lead</button></div></div>
+  </form>
+</aside>
+{% endblock %}

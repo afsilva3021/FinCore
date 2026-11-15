@@ -1,0 +1,44 @@
+{% extends "finance/layout.html" %}
+{% block title %}Atividades · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · AGENDA COMERCIAL</span><h1>Atividades</h1><p>Tarefas, ligações, reuniões, e-mails e notas ligadas a leads, negociações e contatos.</p></div>
+  <div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="activity-drawer" aria-expanded="false">＋ Nova atividade</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error and not open_drawer %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<div class="alert alert-info" role="status">Registro interno: o FinCore não envia e-mails, mensagens nem convites de reunião.</div>
+<nav class="crm-chip-row mb-3" aria-label="Situação das atividades">{% for key, label in [('pending','Pendentes'),('done','Concluídas'),('all','Todas')] %}<a class="crm-chip {% if status == key %}is-active{% endif %}" href="/crm/activities?status={{ key }}" {% if status == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+<article class="panel-card transactions-table-card">
+  {% if activities %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Atividade</th><th>Ligada a</th><th>Prazo</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+  {% for item in activities %}<tr>
+    <td><strong>{{ item.subject }}</strong><small class="d-block text-secondary">{{ activity_labels.get(item.activity_type, item.activity_type) }}</small>{% if item.notes %}<small class="d-block text-secondary">{{ item.notes }}</small>{% endif %}</td>
+    <td>{% if item.deal %}<a href="/crm/deals/{{ item.deal.id }}">Negociação: {{ item.deal.title }}</a>{% elif item.lead %}Lead: {{ item.lead.name }}{% elif item.counterparty %}Contato: {{ item.counterparty.name }}{% endif %}</td>
+    <td>{{ item.due_date.strftime('%d/%m/%Y') if item.due_date else '—' }}</td>
+    <td>{% if item.done_at %}<span class="badge text-bg-success">Concluída</span><small class="d-block text-secondary">{{ item.done_at.strftime('%d/%m/%Y') }}</small>{% elif item.id in overdue %}<span class="badge text-bg-danger">Atrasada</span>{% else %}<span class="badge text-bg-secondary">Pendente</span>{% endif %}</td>
+    <td>{% if not item.done_at %}<form method="post" action="/crm/activities/{{ item.id }}/complete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-success" type="submit">Concluir</button></form>{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>✓</span><strong>Nenhuma atividade {{ 'pendente' if status == 'pending' else 'encontrada' }}</strong><small>Registre o próximo passo de um lead ou negociação.</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="activity-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="activity-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">NOVA ATIVIDADE</span><h2 id="activity-drawer-title">Registrar atividade</h2><p>Ligue a atividade a exatamente um registro.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/crm/activities" class="movement-drawer-form" data-movement-form><input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if error and open_drawer %}<div class="alert alert-danger mx-4 mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
+    <div class="drawer-form-fields">
+      <div class="drawer-date-grid"><div><label class="form-label" for="activity-type">Tipo</label><select class="form-select" id="activity-type" name="activity_type">{% for key, label in activity_labels.items() %}<option value="{{ key }}" {% if form.get('activity_type','task') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div><label class="form-label" for="activity-due">Prazo</label><input class="form-control" type="date" id="activity-due" name="due_date" value="{{ form.get('due_date','') }}"></div></div>
+      <div><label class="form-label" for="activity-subject">Assunto</label><input class="form-control" id="activity-subject" name="subject" maxlength="200" value="{{ form.get('subject','') }}" required></div>
+      <div><label class="form-label" for="activity-deal">Negociação</label><select class="form-select" id="activity-deal" name="deal_id"><option value="">—</option>{% for deal in deals %}<option value="{{ deal.id }}" {% if form.get('deal_id') == deal.id|string %}selected{% endif %}>{{ deal.title }} · {{ deal.counterparty.name }}</option>{% endfor %}</select></div>
+      <div><label class="form-label" for="activity-lead">ou Lead</label><select class="form-select" id="activity-lead" name="lead_id"><option value="">—</option>{% for lead in leads %}<option value="{{ lead.id }}" {% if form.get('lead_id') == lead.id|string %}selected{% endif %}>{{ lead.name }}{% if lead.company_name %} · {{ lead.company_name }}{% endif %}</option>{% endfor %}</select></div>
+      <div><label class="form-label" for="activity-contact">ou Contato</label><select class="form-select" id="activity-contact" name="counterparty_id"><option value="">—</option>{% for contact in contacts %}<option value="{{ contact.id }}" {% if form.get('counterparty_id') == contact.id|string %}selected{% endif %}>{{ contact.name }}</option>{% endfor %}</select></div>
+      <div><label class="form-label" for="activity-notes">Observações</label><textarea class="form-control" id="activity-notes" name="notes" rows="3" maxlength="2000">{{ form.get('notes','') }}</textarea></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" id="activity-done" name="done" value="true" {% if form.get('done') %}checked{% endif %}><label class="form-check-label" for="activity-done">Já concluída</label></div>
+    </div>
+    <div class="movement-drawer-footer"><span>Notas já nascem concluídas.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Registrar</button></div></div>
+  </form>
+</aside>
+{% endblock %}

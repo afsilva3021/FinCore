@@ -1,0 +1,77 @@
+{% extends "finance/layout.html" %}
+{% block title %}{{ deal.title }} · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · NEGOCIAÇÃO</span><h1>{{ deal.title }}</h1><p>{{ deal.counterparty.name }} · <span class="badge crm-status crm-status-{{ deal.status }}">{{ status_labels.get(deal.status, deal.status) }}</span> · Etapa {{ deal.stage.name }} ({{ deal.stage.win_probability }}%)</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/crm/deals">Voltar ao quadro</a>{% if deal.status != 'lost' %}<button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="proposal-drawer" aria-expanded="false">＋ Nova proposta</button>{% endif %}</div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error and not open_drawer %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% if stalled %}<div class="alert alert-warning" role="status">Negociação parada: sem mudar de etapa há mais de {{ stalled_days }} dias.</div>{% endif %}
+{% if deal.status == 'lost' %}<div class="alert alert-secondary" role="status"><strong>Motivo da perda:</strong> {{ deal.lost_reason }}</div>{% endif %}
+
+<section class="crm-detail-grid">
+  <article class="panel-card">
+    <div class="panel-heading"><div><h3>Dados</h3><p>Valor R$ {{ deal.amount|brl }}{% if deal.expected_close_date %} · previsão {{ deal.expected_close_date.strftime('%d/%m/%Y') }}{% endif %} · criada em {{ deal.created_at.strftime('%d/%m/%Y') }}</p></div></div>
+    {% if deal.status == 'open' %}
+    <form method="post" action="/crm/deals/{{ deal.id }}/update" class="row g-2"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="col-12"><label class="form-label" for="edit-title">Título</label><input class="form-control" id="edit-title" name="title" maxlength="160" value="{{ deal.title }}" required></div>
+      <div class="col-md-6"><label class="form-label" for="edit-amount">Valor</label><div class="input-group"><span class="input-group-text">R$</span><input class="form-control" id="edit-amount" name="amount" inputmode="decimal" value="{{ deal.amount|brl }}"></div></div>
+      <div class="col-md-6"><label class="form-label" for="edit-close">Previsão de fechamento</label><input class="form-control" type="date" id="edit-close" name="expected_close_date" value="{{ deal.expected_close_date.isoformat() if deal.expected_close_date else '' }}"></div>
+      <div class="col-12"><label class="form-label" for="edit-notes">Observações</label><textarea class="form-control" id="edit-notes" name="notes" rows="2" maxlength="2000">{{ deal.notes or '' }}</textarea></div>
+      <div class="col-12"><button class="btn btn-outline-primary btn-sm" type="submit">Salvar dados</button></div>
+    </form>
+    <hr>
+    <div class="crm-actions">
+      <form method="post" action="/crm/deals/{{ deal.id }}/stage" class="d-flex gap-2"><input type="hidden" name="csrf" value="{{ csrf }}"><label class="visually-hidden" for="detail-stage">Etapa</label><select class="form-select form-select-sm" id="detail-stage" name="stage_id">{% for stage in stages %}<option value="{{ stage.id }}" {% if stage.id == deal.stage_id %}selected{% endif %}>{{ stage.name }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary text-nowrap" type="submit">Mover etapa</button></form>
+      <form method="post" action="/crm/deals/{{ deal.id }}/win" data-confirm="Marcar esta negociação como ganha? Nenhum título é gerado; para faturar, aceite uma proposta." data-confirm-title="Negociação ganha" data-confirm-action="Marcar como ganha"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-success" type="submit">Ganha</button></form>
+      <form method="post" action="/crm/deals/{{ deal.id }}/lose" class="d-flex gap-2"><input type="hidden" name="csrf" value="{{ csrf }}"><label class="visually-hidden" for="lost-reason">Motivo da perda</label><input class="form-control form-control-sm" id="lost-reason" name="lost_reason" maxlength="240" placeholder="Motivo da perda" required><button class="btn btn-sm btn-outline-danger" type="submit">Perdida</button></form>
+    </div>
+    {% else %}
+    {% if deal.notes %}<p>{{ deal.notes }}</p>{% endif %}
+    <p class="text-secondary">Encerrada em {{ deal.closed_at.strftime('%d/%m/%Y') if deal.closed_at else '—' }}. Negociações encerradas não são alteradas.</p>
+    <form method="post" action="/crm/deals/{{ deal.id }}/reopen"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Reabrir negociação</button></form>
+    {% endif %}
+  </article>
+
+  <article class="panel-card">
+    <div class="panel-heading"><div><h3>Propostas</h3><p>O aceite gera títulos a receber; não movimenta caixa.</p></div><span class="step-count">{{ proposals|length }}</span></div>
+    {% if proposals %}<div class="recent-list">{% for item in proposals %}<a class="recent-row text-decoration-none" href="/crm/proposals/{{ item.id }}"><span class="account-balance-icon">▤</span><span class="recent-copy"><strong>Proposta nº {{ item.number }}</strong><small>{{ proposal_labels[proposal_states[item.id]] }} · válida até {{ item.valid_until.strftime('%d/%m/%Y') }}</small></span><span class="recent-amount">R$ {{ proposal_totals[item.id]|brl }}</span></a>{% endfor %}</div>
+    {% else %}<div class="finance-empty"><span>▤</span><strong>Nenhuma proposta</strong><small>Crie uma proposta com itens e validade para esta negociação.</small></div>{% endif %}
+  </article>
+</section>
+
+<section class="crm-detail-grid mt-3">
+  <article class="panel-card">
+    <div class="panel-heading"><div><h3>Atividades</h3><p>Tarefas, ligações, reuniões, e-mails e notas desta negociação.</p></div></div>
+    <form method="post" action="/crm/deals/{{ deal.id }}/activities" class="row g-2 mb-3"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="col-md-3"><label class="form-label" for="act-type">Tipo</label><select class="form-select form-select-sm" id="act-type" name="activity_type">{% for key, label in activity_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-md-5"><label class="form-label" for="act-subject">Assunto</label><input class="form-control form-control-sm" id="act-subject" name="subject" maxlength="200" required></div>
+      <div class="col-md-4"><label class="form-label" for="act-due">Prazo</label><input class="form-control form-control-sm" type="date" id="act-due" name="due_date"></div>
+      <div class="col-12 d-flex gap-3 align-items-center"><div class="form-check"><input class="form-check-input" type="checkbox" id="act-done" name="done" value="true"><label class="form-check-label" for="act-done">Já concluída</label></div><button class="btn btn-sm btn-primary" type="submit">Registrar</button></div>
+    </form>
+    {% if activities %}<div class="recent-list">{% for item in activities %}<div class="recent-row"><span class="recent-icon {{ 'mint' if item.done_at else 'coral' if item.id in overdue else 'blue' }}">{{ '✓' if item.done_at else '◷' }}</span><span class="recent-copy"><strong>{{ item.subject }}</strong><small>{{ activity_labels.get(item.activity_type, item.activity_type) }}{% if item.done_at %} · concluída em {{ item.done_at.strftime('%d/%m/%Y') }}{% elif item.due_date %} · prazo {{ item.due_date.strftime('%d/%m/%Y') }}{% if item.id in overdue %} (atrasada){% endif %}{% endif %}</small></span>{% if not item.done_at %}<form method="post" action="/crm/activities/{{ item.id }}/complete"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="return_to" value="deal"><button class="btn btn-sm btn-outline-success" type="submit">Concluir</button></form>{% endif %}</div>{% endfor %}</div>
+    {% else %}<div class="finance-empty"><span>✓</span><strong>Nenhuma atividade registrada</strong></div>{% endif %}
+  </article>
+  <article class="panel-card">
+    <div class="panel-heading"><div><h3>Histórico</h3><p>Quem alterou a negociação e quando.</p></div></div>
+    <div class="recent-list">{% for event in events %}<div class="recent-row"><span class="account-balance-icon">•</span><span class="recent-copy"><strong>{{ event_labels.get(event.action, event.action) }}{% if event.action == 'stage_changed' %}: {{ event.from_stage.name if event.from_stage else '—' }} → {{ event.to_stage.name if event.to_stage else '—' }}{% endif %}</strong><small>{{ event.actor.full_name }} · {{ event.occurred_at.strftime('%d/%m/%Y %H:%M') }} UTC{% if event.detail %} · {{ event.detail }}{% endif %}</small></span></div>{% endfor %}</div>
+  </article>
+</section>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer title-drawer" id="proposal-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="proposal-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">NOVA PROPOSTA</span><h2 id="proposal-drawer-title">Proposta para {{ deal.counterparty.name }}</h2><p>Nasce em rascunho. Preencha só as linhas necessárias.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/crm/deals/{{ deal.id }}/proposals" class="movement-drawer-form" data-movement-form><input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if error and open_drawer %}<div class="alert alert-danger mx-4 mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
+    <div class="drawer-form-fields">
+      {% for index in item_rows %}
+      <div class="crm-item-row"><div><label class="form-label" for="item-desc-{{ index }}">Item {{ index }}</label><input class="form-control" id="item-desc-{{ index }}" name="item_description_{{ index }}" maxlength="200" value="{{ form.get('item_description_' ~ index, '') }}" placeholder="Descrição" {% if index == 1 %}required{% endif %}></div><div><label class="form-label" for="item-qty-{{ index }}">Qtd.</label><input class="form-control" id="item-qty-{{ index }}" name="item_quantity_{{ index }}" inputmode="decimal" value="{{ form.get('item_quantity_' ~ index, '') }}" placeholder="1"></div><div><label class="form-label" for="item-price-{{ index }}">Preço unit.</label><input class="form-control" id="item-price-{{ index }}" name="item_price_{{ index }}" inputmode="decimal" value="{{ form.get('item_price_' ~ index, '') }}" placeholder="0,00"></div></div>
+      {% endfor %}
+      <div class="drawer-date-grid"><div><label class="form-label" for="proposal-discount">Desconto</label><div class="input-group"><span class="input-group-text">R$</span><input class="form-control" id="proposal-discount" name="discount" inputmode="decimal" placeholder="0,00" value="{{ form.get('discount','') }}"></div></div><div><label class="form-label" for="proposal-valid">Válida até</label><input class="form-control" type="date" id="proposal-valid" name="valid_until" value="{{ form.get('valid_until', default_valid_until) }}" required></div></div>
+      <div><label class="form-label" for="proposal-notes">Condições / observações</label><textarea class="form-control" id="proposal-notes" name="notes" rows="3" maxlength="2000">{{ form.get('notes','') }}</textarea></div>
+    </div>
+    <div class="movement-drawer-footer"><span>Total = soma dos itens − desconto.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Criar proposta</button></div></div>
+  </form>
+</aside>
+{% endblock %}

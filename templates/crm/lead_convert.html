@@ -1,0 +1,29 @@
+{% extends "finance/layout.html" %}
+{% block title %}Converter lead · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · CONVERSÃO</span><h1>Converter lead</h1><p>{{ lead.name }}{% if lead.company_name %} · {{ lead.company_name }}{% endif %}{% if lead.email %} · {{ lead.email }}{% endif %}</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/crm/leads">Voltar</a></div>
+</div>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% if duplicates %}<div class="alert alert-warning" role="status"><strong>Possível duplicidade:</strong> já existe contato com o mesmo nome ou e-mail. Vincule o lead a ele em vez de criar outro.</div>{% endif %}
+<article class="panel-card">
+  <form method="post" action="/crm/leads/{{ lead.id }}/convert" class="row g-3"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-12"><h3>1. Contato</h3><p class="text-secondary mb-0">O contato fica no cadastro de clientes e pode receber títulos.</p></div>
+    <div class="col-md-6"><label class="form-label" for="convert-contact">Contato</label><select class="form-select" id="convert-contact" name="counterparty_id">
+      <option value="" {% if not form.get('counterparty_id') and not duplicates %}selected{% endif %}>Criar novo contato com os dados do lead</option>
+      {% if duplicates %}<optgroup label="Contatos parecidos">{% for item in duplicates %}<option value="{{ item.id }}" {% if form.get('counterparty_id', duplicates[0].id|string) == item.id|string %}selected{% endif %}>{{ item.name }}{% if item.email %} · {{ item.email }}{% endif %}</option>{% endfor %}</optgroup>{% endif %}
+      {% if contacts %}<optgroup label="Outros contatos ativos">{% for item in contacts %}<option value="{{ item.id }}" {% if form.get('counterparty_id') == item.id|string %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</optgroup>{% endif %}
+    </select></div>
+    <div class="col-md-3"><label class="form-label" for="convert-person">Tipo (contato novo)</label><select class="form-select" id="convert-person" name="person_type"><option value="individual" {% if form.get('person_type', 'company' if lead.company_name else 'individual') == 'individual' %}selected{% endif %}>Pessoa física</option><option value="company" {% if form.get('person_type', 'company' if lead.company_name else 'individual') == 'company' %}selected{% endif %}>Pessoa jurídica</option></select></div>
+    <div class="col-md-3"><label class="form-label" for="convert-tax">CPF/CNPJ <small class="text-secondary">(opcional)</small></label><input class="form-control" id="convert-tax" name="tax_id" maxlength="20" inputmode="numeric" value="{{ form.get('tax_id','') }}"></div>
+    <div class="col-12"><h3 class="mt-2">2. Negociação</h3></div>
+    <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="convert-deal" name="create_deal" value="true" {% if not form or form.get('create_deal') %}checked{% endif %}><label class="form-check-label" for="convert-deal">Criar uma negociação no funil</label></div></div>
+    <div class="col-md-6"><label class="form-label" for="convert-title">Título da negociação</label><input class="form-control" id="convert-title" name="deal_title" maxlength="160" value="{{ form.get('deal_title','') }}" placeholder="Se vazio, usa o nome do contato"></div>
+    <div class="col-md-3"><label class="form-label" for="convert-amount">Valor</label><div class="input-group"><span class="input-group-text">R$</span><input class="form-control" id="convert-amount" name="deal_amount" inputmode="decimal" value="{{ form.get('deal_amount', (lead.estimated_value|brl) if lead.estimated_value is not none else '') }}"></div></div>
+    <div class="col-md-3"><label class="form-label" for="convert-stage">Etapa</label><select class="form-select" id="convert-stage" name="stage_id">{% for stage in stages %}<option value="{{ stage.id }}" {% if form.get('stage_id') == stage.id|string %}selected{% endif %}>{{ stage.name }} ({{ stage.win_probability }}%)</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label" for="convert-close">Previsão de fechamento</label><input class="form-control" type="date" id="convert-close" name="expected_close_date" value="{{ form.get('expected_close_date','') }}"></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Converter lead</button> <small class="text-secondary ms-2">A conversão é registrada com seu usuário e não pode ser desfeita.</small></div>
+  </form>
+</article>
+{% endblock %}

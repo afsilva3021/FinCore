@@ -377,3 +377,201 @@ class ReconciliationEvent(Model):
     )
     action = fields.CharField(max_length=12)
     occurred_at = fields.DatetimeField(auto_now_add=True)
+
+
+class CrmPipelineStage(Model):
+    """Etapa do funil de vendas; ganho e perda são situações da negociação, não etapas."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="crm_stages", on_delete=fields.CASCADE
+    )
+    name = fields.CharField(max_length=60)
+    position = fields.IntField(default=0)
+    win_probability = fields.IntField(default=0)
+    is_active = fields.BooleanField(default=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "name"),)
+
+
+class CrmLead(Model):
+    """Contato comercial ainda não qualificado; vira contato/negociação na conversão."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="crm_leads", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_crm_leads", on_delete=fields.RESTRICT
+    )
+    owner = fields.ForeignKeyField(
+        "models.User", related_name="owned_crm_leads", null=True, on_delete=fields.RESTRICT
+    )
+    # Chave de idempotência da criação pela API.
+    operation_key = fields.UUIDField(null=True, unique=True)
+    name = fields.CharField(max_length=160)
+    company_name = fields.CharField(max_length=160, null=True)
+    email = fields.CharField(max_length=254, null=True)
+    phone = fields.CharField(max_length=40, null=True)
+    source = fields.CharField(max_length=16, default="other")
+    status = fields.CharField(max_length=16, default="new")
+    estimated_value = fields.DecimalField(max_digits=15, decimal_places=2, null=True)
+    currency = fields.CharField(max_length=3, default="BRL")
+    # Critérios de qualificação confirmados (necessidade, orçamento, decisor, prazo).
+    has_need = fields.BooleanField(default=False)
+    has_budget = fields.BooleanField(default=False)
+    has_authority = fields.BooleanField(default=False)
+    has_timeline = fields.BooleanField(default=False)
+    disqualified_reason = fields.CharField(max_length=240, null=True)
+    converted_counterparty = fields.ForeignKeyField(
+        "models.Counterparty", related_name="source_leads", null=True, on_delete=fields.RESTRICT
+    )
+    converted_deal = fields.ForeignKeyField(
+        "models.CrmDeal", related_name="source_leads", null=True, on_delete=fields.RESTRICT
+    )
+    converted_by = fields.ForeignKeyField(
+        "models.User", related_name="converted_crm_leads", null=True, on_delete=fields.RESTRICT
+    )
+    converted_at = fields.DatetimeField(null=True)
+    notes = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+
+class CrmDeal(Model):
+    """Negociação (oportunidade) com um contato, em uma etapa do funil."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="crm_deals", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_crm_deals", on_delete=fields.RESTRICT
+    )
+    owner = fields.ForeignKeyField(
+        "models.User", related_name="owned_crm_deals", null=True, on_delete=fields.RESTRICT
+    )
+    counterparty = fields.ForeignKeyField(
+        "models.Counterparty", related_name="crm_deals", on_delete=fields.RESTRICT
+    )
+    stage = fields.ForeignKeyField(
+        "models.CrmPipelineStage", related_name="deals", on_delete=fields.RESTRICT
+    )
+    # Chave de idempotência da criação pela API.
+    operation_key = fields.UUIDField(null=True, unique=True)
+    title = fields.CharField(max_length=160)
+    amount = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    currency = fields.CharField(max_length=3, default="BRL")
+    expected_close_date = fields.DateField(null=True)
+    status = fields.CharField(max_length=8, default="open")
+    lost_reason = fields.CharField(max_length=240, null=True)
+    stage_changed_at = fields.DatetimeField()
+    closed_at = fields.DatetimeField(null=True)
+    notes = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+
+class CrmDealEvent(Model):
+    """Trilha de auditoria da negociação: quem mudou etapa/situação e quando."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="crm_deal_events", on_delete=fields.CASCADE
+    )
+    deal = fields.ForeignKeyField("models.CrmDeal", related_name="events", on_delete=fields.CASCADE)
+    actor = fields.ForeignKeyField(
+        "models.User", related_name="crm_deal_events", on_delete=fields.RESTRICT
+    )
+    action = fields.CharField(max_length=16)
+    from_stage = fields.ForeignKeyField(
+        "models.CrmPipelineStage", related_name="events_from", null=True, on_delete=fields.RESTRICT
+    )
+    to_stage = fields.ForeignKeyField(
+        "models.CrmPipelineStage", related_name="events_to", null=True, on_delete=fields.RESTRICT
+    )
+    detail = fields.CharField(max_length=240, null=True)
+    occurred_at = fields.DatetimeField(auto_now_add=True)
+
+
+class CrmActivity(Model):
+    """Tarefa, ligação, reunião, e-mail ou nota ligada a um lead, negociação ou contato."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="crm_activities", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_crm_activities", on_delete=fields.RESTRICT
+    )
+    lead = fields.ForeignKeyField(
+        "models.CrmLead", related_name="activities", null=True, on_delete=fields.RESTRICT
+    )
+    deal = fields.ForeignKeyField(
+        "models.CrmDeal", related_name="activities", null=True, on_delete=fields.RESTRICT
+    )
+    counterparty = fields.ForeignKeyField(
+        "models.Counterparty", related_name="crm_activities", null=True, on_delete=fields.RESTRICT
+    )
+    activity_type = fields.CharField(max_length=12)
+    subject = fields.CharField(max_length=200)
+    due_date = fields.DateField(null=True)
+    done_at = fields.DatetimeField(null=True)
+    done_by = fields.ForeignKeyField(
+        "models.User", related_name="done_crm_activities", null=True, on_delete=fields.RESTRICT
+    )
+    notes = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+
+class CrmProposal(Model):
+    """Proposta comercial de uma negociação; o aceite gera títulos a receber."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="crm_proposals", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_crm_proposals", on_delete=fields.RESTRICT
+    )
+    deal = fields.ForeignKeyField(
+        "models.CrmDeal", related_name="proposals", on_delete=fields.RESTRICT
+    )
+    # Chave de idempotência da criação pela API.
+    operation_key = fields.UUIDField(null=True, unique=True)
+    number = fields.IntField()
+    status = fields.CharField(max_length=12, default="draft")
+    issue_date = fields.DateField()
+    valid_until = fields.DateField()
+    discount = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    currency = fields.CharField(max_length=3, default="BRL")
+    notes = fields.TextField(null=True)
+    sent_at = fields.DatetimeField(null=True)
+    decided_at = fields.DatetimeField(null=True)
+    decided_by = fields.ForeignKeyField(
+        "models.User", related_name="decided_crm_proposals", null=True, on_delete=fields.RESTRICT
+    )
+    rejection_reason = fields.CharField(max_length=240, null=True)
+    # Primeira parcela dos títulos a receber gerados no aceite (as demais seguem o grupo).
+    first_title = fields.OneToOneField(
+        "models.FinancialTitle",
+        related_name="source_proposal",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "number"),)
+
+
+class CrmProposalItem(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    proposal = fields.ForeignKeyField(
+        "models.CrmProposal", related_name="items", on_delete=fields.CASCADE
+    )
+    position = fields.IntField(default=1)
+    description = fields.CharField(max_length=200)
+    quantity = fields.DecimalField(max_digits=12, decimal_places=3)
+    unit_price = fields.DecimalField(max_digits=15, decimal_places=2)
+    total = fields.DecimalField(max_digits=15, decimal_places=2)
