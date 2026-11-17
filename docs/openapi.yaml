@@ -189,6 +189,36 @@ components:
               quantity: {$ref: '#/components/schemas/Quantity'}
               unit_cost: {type: string, examples: ["4.000000"]}
               received_quantity: {$ref: '#/components/schemas/Quantity'}
+    SalesOrder:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string, examples: [PV-00001]}
+        status: {type: string, enum: [quote, confirmed, invoiced, cancelled]}
+        customer:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+        warehouse_id: {type: string, format: uuid}
+        order_date: {type: string, format: date}
+        valid_until: {type: [string, "null"], format: date}
+        payment_method: {type: string}
+        installment_count: {type: integer}
+        first_due_days: {type: integer}
+        total: {$ref: '#/components/schemas/Money'}
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              product_id: {type: string, format: uuid}
+              sku: {type: string}
+              quantity: {$ref: '#/components/schemas/Quantity'}
+              unit_price: {$ref: '#/components/schemas/Money'}
+              discount: {$ref: '#/components/schemas/Money'}
+              total: {$ref: '#/components/schemas/Money'}
     Title:
       type: object
       properties:
@@ -456,6 +486,38 @@ paths:
         "200":
           description: Pedido com itens.
           content: {application/json: {schema: {$ref: '#/components/schemas/PurchaseOrder'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/sales-orders:
+    get:
+      summary: Lista orçamentos e pedidos de venda
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: status, in: query, schema: {type: string, enum: [quote, confirmed, invoiced, cancelled]}}
+      responses:
+        "200":
+          description: Pedidos do mais novo para o mais antigo, com itens e total.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/SalesOrder'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/sales-orders/{order_id}:
+    get:
+      summary: Detalha um orçamento ou pedido de venda
+      parameters:
+        - {name: order_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Pedido com itens.
+          content: {application/json: {schema: {$ref: '#/components/schemas/SalesOrder'}}}
         "401": {$ref: '#/components/responses/Unauthenticated'}
         "404": {$ref: '#/components/responses/NotFound'}
   /api/v1/titles:

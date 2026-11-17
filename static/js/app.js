@@ -54,6 +54,10 @@ const syncCurrentNavigation = () => {
     });
   }
 
+  // Páginas de detalhe (/sales/<id>, /products/<id>/edit) não têm link próprio no menu:
+  // vale o item que o servidor marcou como ativo.
+  if (!activeLink) activeLink = navLinks.find((link) => link.classList.contains('active'));
+
   navLinks.forEach((link) => {
     const isCurrent = link === activeLink;
     link.classList.toggle('active', isCurrent);

@@ -34,6 +34,7 @@ from fincore.application.members import (
     AREA_FINANCE,
     AREA_INVENTORY,
     AREA_PURCHASING,
+    AREA_SALES,
     ROLE_DESCRIPTIONS,
     ROLE_LABELS,
     can_manage_members,
@@ -104,6 +105,8 @@ AREA_PATH_PREFIXES = {
     "/purchases": AREA_PURCHASING,
     "/api/v1/purchase-orders": AREA_PURCHASING,
     "/contacts": AREA_CONTACTS,
+    "/sales": AREA_SALES,
+    "/api/v1/sales-orders": AREA_SALES,
 }
 
 

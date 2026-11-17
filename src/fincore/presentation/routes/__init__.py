@@ -13,6 +13,7 @@ from fincore.presentation.routes.products import register_product_routes
 from fincore.presentation.routes.purchases import register_purchase_routes
 from fincore.presentation.routes.reconciliation import register_reconciliation_routes
 from fincore.presentation.routes.reports import register_report_routes
+from fincore.presentation.routes.sales import register_sales_routes
 
 __all__ = [
     "register_web_routes",
@@ -28,4 +29,5 @@ __all__ = [
     "register_product_routes",
     "register_inventory_routes",
     "register_purchase_routes",
+    "register_sales_routes",
 ]

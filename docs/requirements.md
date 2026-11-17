@@ -94,3 +94,21 @@ Autenticação, organizações, lançamentos, plano de contas, integrações ban
 - Estorno de recebimento restaura estoque, cancela títulos e inverte o diário; é recusado se houver baixa ou se a mercadoria já saiu.
 - Pedido com mercadoria recebida não é cancelado.
 - Pedidos e recebimentos de uma organização não são vistos nem alterados por outra.
+
+## Fase 11 — Vendas (ERP)
+
+### Histórias de usuário
+
+- Como vendedor, quero montar um orçamento, confirmá-lo como pedido quando o cliente aceitar e faturar.
+- Como financeiro, quero que o faturamento gere as contas a receber nas condições combinadas.
+- Como proprietário, quero ver a margem de cada venda.
+
+### Critérios de aceite
+
+- Faturamento sem estoque suficiente é recusado e nada é gravado; dois faturamentos simultâneos do último item, só um passa.
+- Faturamento grava estoque, títulos, receita e custo juntos.
+- Totais e descontos em `Decimal` exato; parcelas somam o total.
+- Receber um título de venda quita Clientes e não duplica a receita.
+- Devolução restaura o estoque pelo custo original, cancela títulos e inverte receita e custo; é recusada se houver recebimento.
+- Pedido faturado não é cancelado; orçamento vencido não é confirmado.
+- Vendas de uma organização não são vistas nem alteradas por outra.

@@ -30,6 +30,9 @@ from fincore.infrastructure.models import (
     PurchaseOrderItem,
     PurchaseReceipt,
     ReconciliationMatch,
+    SalesInvoice,
+    SalesOrder,
+    SalesOrderItem,
     StockBalance,
     StockMovement,
     TitleSettlement,
@@ -554,3 +557,68 @@ async def document_titles(
         for row in rows:
             grouped[row.source_id].append(row)
     return grouped
+
+
+# --- Vendas ---------------------------------------------------------------------------
+
+
+async def active_customers(organization: Organization) -> list[Counterparty]:
+    return await Counterparty.filter(
+        organization=organization, is_active=True, is_customer=True
+    ).order_by("name")
+
+
+async def sellable_products(organization: Organization) -> list[Product]:
+    """Produtos ativos, com ou sem controle de estoque."""
+    return (
+        await Product.filter(organization=organization, is_active=True)
+        .select_related("unit")
+        .order_by("name", "sku")
+    )
+
+
+def sales_orders_query(
+    organization: Organization, *, status: str = "", search: str = ""
+) -> QuerySet[SalesOrder]:
+    query = SalesOrder.filter(organization=organization)
+    if status:
+        query = query.filter(status=status)
+    term = search.strip()
+    if term:
+        condition = Q(customer__name__icontains=term) | Q(customer__trade_name__icontains=term)
+        digits = term.upper().removeprefix("PV-").lstrip("0")
+        if digits.isdigit():
+            condition |= Q(number=int(digits))
+        query = query.filter(condition)
+    return query.select_related("customer", "warehouse").order_by("-number")
+
+
+async def get_sales_order(organization: Organization, order_id: UUID) -> SalesOrder | None:
+    return (
+        await SalesOrder.filter(id=order_id, organization=organization)
+        .select_related("customer", "warehouse", "account", "created_by")
+        .first()
+    )
+
+
+async def sales_order_items(orders: Iterable[SalesOrder]) -> dict[UUID, list]:
+    """Itens (com produto e unidade) de vários pedidos numa consulta só, por pedido."""
+    ids = [order.id for order in orders]
+    grouped: dict[UUID, list] = {order_id: [] for order_id in ids}
+    if ids:
+        rows = (
+            await SalesOrderItem.filter(order_id__in=ids)
+            .select_related("product__unit")
+            .order_by("position")
+        )
+        for row in rows:
+            grouped[row.order_id].append(row)
+    return grouped
+
+
+async def sales_invoices(order: SalesOrder) -> list[SalesInvoice]:
+    return await SalesInvoice.filter(order=order).select_related("created_by").order_by("number")
+
+
+async def get_sales_invoice(organization: Organization, invoice_id: UUID) -> SalesInvoice | None:
+    return await SalesInvoice.get_or_none(id=invoice_id, organization=organization)

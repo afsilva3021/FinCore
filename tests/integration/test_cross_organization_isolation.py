@@ -28,6 +28,7 @@ from fincore.application.purchases import (
     create_purchase_order,
     receive_purchase_order,
 )
+from fincore.application.sales import confirm_sales_order, create_sales_order, invoice_sales_order
 from fincore.application.titles import create_titles
 from fincore.config.database import TORTOISE_ORM
 from fincore.infrastructure.models import (
@@ -46,6 +47,8 @@ from fincore.infrastructure.models import (
     PurchaseOrderItem,
     PurchaseReceipt,
     ReconciliationMatch,
+    SalesInvoice,
+    SalesOrder,
     StockBalance,
     StockMovement,
     UnitOfMeasure,
@@ -198,8 +201,40 @@ async def _seed_organization_a():
         received_on=date.today(),
         quantities={purchase_item.id: Decimal("4")},
     )
+    customer = await save_counterparty(
+        organization=organization,
+        person_type="individual",
+        name=f"{SECRET_NAME} cliente",
+        is_customer=True,
+    )
+
+    async def sale(quantity: str):
+        order = await create_sales_order(
+            organization=organization,
+            user=user,
+            operation_key=uuid4(),
+            customer_id=customer.id,
+            warehouse_id=warehouse.id,
+            account_id=account.id,
+            order_date=date.today(),
+            items=[(product.id, Decimal(quantity), Decimal("9.00"), Decimal("0"))],
+            notes=f"{SECRET_NAME} venda",
+        )
+        return await confirm_sales_order(organization, order.id)
+
+    sales_order = await sale("1")
+    invoiced_order = await sale("2")
+    sales_invoice, _ = await invoice_sales_order(
+        organization=organization,
+        user=user,
+        order_id=invoiced_order.id,
+        operation_key=uuid4(),
+        issued_on=date.today(),
+    )
     return {
         "organization": organization,
+        "sales_order": sales_order,
+        "sales_invoice": sales_invoice,
         "purchase_order": purchase_order,
         "purchase_item": purchase_item,
         "purchase_receipt": purchase_receipt,
@@ -253,6 +288,12 @@ async def _snapshot(seed: dict) -> dict:
             "id", "quantity", "total_value", "movement_count"
         ),
         "stock_movements": await StockMovement.filter(organization=organization).count(),
+        "sales_orders": await SalesOrder.filter(organization=organization)
+        .order_by("number")
+        .values("id", "status"),
+        "sales_invoices": await SalesInvoice.filter(organization=organization).values(
+            "id", "status"
+        ),
         "purchase_orders": await PurchaseOrder.filter(organization=organization).values(
             "id", "status"
         ),
@@ -363,6 +404,17 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
             api,
             json.dumps({"sku": "INTRUSO-C", "name": "Intruso", "unit_id": a["unit"]}),
         ),
+        ("get", f"/sales/{a['sales_order']}", form, None),
+        ("post", f"/sales/{a['sales_order']}/cancel", form, ""),
+        ("post", f"/sales/{a['sales_order']}/confirm", form, ""),
+        (
+            "post",
+            f"/sales/{a['sales_order']}/invoices",
+            form,
+            f"operation_key={uuid4()}&issued_on={today}",
+        ),
+        ("post", f"/sales/invoices/{a['sales_invoice']}/reverse", form, ""),
+        ("get", f"/api/v1/sales-orders/{a['sales_order']}", api, None),
         ("get", f"/purchases/{a['purchase_order']}", form, None),
         ("post", f"/purchases/{a['purchase_order']}/cancel", form, ""),
         ("post", f"/purchases/{a['purchase_order']}/approve", form, ""),
@@ -445,6 +497,8 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
         "/api/v1/stock/movements",
         "/purchases",
         "/api/v1/purchase-orders",
+        "/sales",
+        "/api/v1/sales-orders",
     ):
         response = await asyncio.to_thread(client.get, path, headers=form)
         assert response.status_code == 200, path

@@ -73,3 +73,17 @@ Títulos cadastrados à mão continuam lançando só na baixa (despesa ou receit
 - O saldo de `SYS-SUPPLIERS` é o total em aberto dos títulos de compra.
 - O estorno de recebimento exige que nenhum título dele tenha baixa e que a mercadoria ainda esteja no estoque.
 - Os relatórios e a visão geral financeira são de caixa: mostram o pagamento da compra como saída do período. O diário é quem separa estoque, dívida e resultado.
+
+## Vendas (por competência)
+
+| Evento | Débito | Crédito |
+|---|---|---|
+| Faturamento | `SYS-CUSTOMERS` Clientes (ativo) | `SYS-SALES` Receita de vendas |
+| Custo da venda (mesmo momento) | `SYS-COGS` Custo das mercadorias vendidas (despesa) | `SYS-STOCK` Estoque |
+| Recebimento de título de venda | Conta do banco (valor líquido) e `SYS-FIN-EXP` (desconto concedido + tarifas) | `SYS-CUSTOMERS` (valor aplicado) e `SYS-FIN-REV` (juros + multa) |
+| Devolução (estorno do faturamento) | inverso dos dois lançamentos do faturamento | |
+
+- O custo da venda é o custo médio do estoque no momento do faturamento; produto que não controla estoque não gera custo.
+- A devolução devolve a mercadoria ao estoque pelo valor com que saiu, então o lançamento de custo é invertido pelo mesmo valor.
+- O saldo de `SYS-CUSTOMERS` é o total em aberto dos títulos de venda.
+- Margem bruta = `SYS-SALES` − `SYS-COGS`.

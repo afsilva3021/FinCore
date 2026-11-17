@@ -25,6 +25,7 @@ from fincore.application.purchases import (
     create_purchase_order,
     receive_purchase_order,
 )
+from fincore.application.sales import confirm_sales_order, create_sales_order, invoice_sales_order
 from fincore.application.titles import create_titles, settle_title
 from fincore.infrastructure.models import (
     Membership,
@@ -275,4 +276,47 @@ async def seed_demo(today: date | None = None) -> str:
         document_number="NF 4521",
         quantities={purchase_items[created_products["PAO-QUEIJO"].id].id: Decimal("10")},
     )
+    # Vendas: uma faturada (baixa estoque, gera contas a receber, receita e custo), um
+    # pedido confirmado aguardando faturamento e um orçamento em aberto.
+    customer = await save_counterparty(
+        organization=organization,
+        person_type="company",
+        name="Escritório Exemplo Ltda",
+        trade_name="Escritório Exemplo",
+        is_customer=True,
+    )
+
+    async def demo_sale(items, **extra):
+        return await create_sales_order(
+            organization=organization,
+            user=owner,
+            operation_key=uuid4(),
+            customer_id=customer.id,
+            warehouse_id=main_warehouse.id,
+            account_id=bank.id,
+            order_date=today,
+            items=[
+                (created_products[sku].id, Decimal(quantity), None, Decimal(discount))
+                for sku, quantity, discount in items
+            ],
+            **extra,
+        )
+
+    invoiced = await demo_sale(
+        [("BOLO-CENOURA", "2", "6.00"), ("CAFE-COADO", "10", "0")],
+        payment_method="boleto",
+        first_due_days=15,
+        notes="Coffee break da reunião mensal",
+    )
+    await confirm_sales_order(organization, invoiced.id)
+    await invoice_sales_order(
+        organization=organization,
+        user=owner,
+        order_id=invoiced.id,
+        operation_key=uuid4(),
+        issued_on=today,
+    )
+    waiting = await demo_sale([("PAO-QUEIJO", "3", "0"), ("SUCO-LARANJA", "4", "0")])
+    await confirm_sales_order(organization, waiting.id)
+    await demo_sale([("SONHO-CREME", "30", "15.00")], valid_until=today + timedelta(days=7))
     return DEMO_EMAIL

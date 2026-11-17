@@ -1,0 +1,66 @@
+{% extends "finance/layout.html" %}
+{% block title %}Vendas · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">VENDAS · ORÇAMENTOS E PEDIDOS</span><h1>Vendas</h1><p>O orçamento vira pedido quando o cliente aceita; estoque e contas a receber só mudam no faturamento.</p></div>
+  <div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="sales-drawer" aria-expanded="false">＋ Novo orçamento</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Orçamentos e pedidos</h3><p>Abra um registro para confirmar, faturar ou estornar o faturamento.</p></div><span class="step-count">{{ rows|length }} nesta página</span></div>
+  <form method="get" action="/sales" class="title-filters mb-3">
+    <div class="title-search-field"><label class="form-label" for="sales-search">Buscar</label><input class="form-control" id="sales-search" name="q" maxlength="80" value="{{ search }}" placeholder="Cliente ou número do pedido"></div>
+    <div><label class="form-label" for="sales-status">Situação</label><select class="form-select" id="sales-status" name="status"><option value="">Todas</option>{% for key, label in status_labels.items() %}<option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/sales">Limpar</a></div>
+  </form>
+  {% if rows %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Número</th><th>Cliente</th><th>Data</th><th>Situação</th><th class="text-end">Total</th><th>Ações</th></tr></thead><tbody>
+    {% for row in rows %}
+    <tr><td><strong>{{ row.number }}</strong><small class="d-block text-secondary">{{ row.count }} item(ns)</small></td>
+      <td>{{ row.order.customer.trade_name or row.order.customer.name }}</td>
+      <td>{{ row.order.order_date.strftime('%d/%m/%Y') }}</td>
+      <td><span class="badge {{ status_badges[row.order.status] }}">{{ status_labels[row.order.status] }}</span></td>
+      <td class="text-end text-nowrap">R$ {{ row.total|brl }}</td>
+      <td><a class="btn btn-sm btn-outline-primary" href="/sales/{{ row.order.id }}">Abrir</a></td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>↗</span><strong>Nenhum orçamento ou pedido</strong><small>{% if search or status %}Nenhum registro corresponde aos filtros.{% else %}Crie o primeiro orçamento para um cliente.{% endif %}</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="sales-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="sales-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">VENDAS</span><h2 id="sales-drawer-title">Novo orçamento</h2><p>Nasce como orçamento; confirme quando o cliente aceitar.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/sales" class="movement-drawer-form" data-movement-form>
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="operation_key" value="{{ form.get('operation_key','') }}">
+    {% if form.get('opportunity_id') %}<input type="hidden" name="opportunity_id" value="{{ form.get('opportunity_id') }}">{% endif %}
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="sales-customer">Cliente</label><select class="form-select" id="sales-customer" name="customer_id" required><option value="">Selecione</option>{% for customer in customers %}<option value="{{ customer.id }}" {% if form.get('customer_id') == customer.id|string %}selected{% endif %}>{{ customer.trade_name or customer.name }}</option>{% endfor %}</select>{% if not customers %}<small class="form-text">Cadastre um cliente em <a href="/customers">Clientes</a>.</small>{% endif %}</div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="sales-date">Data</label><input class="form-control" id="sales-date" name="order_date" type="date" value="{{ form.get('order_date', today) }}" required></div><div><label class="form-label" for="sales-valid">Válido até</label><input class="form-control" id="sales-valid" name="valid_until" type="date" value="{{ form.get('valid_until','') }}"></div></div>
+      <div><label class="form-label" for="sales-warehouse">Depósito de saída</label><select class="form-select" id="sales-warehouse" name="warehouse_id" required>{% for warehouse in warehouses %}<option value="{{ warehouse.id }}" {% if form.get('warehouse_id') == warehouse.id|string %}selected{% endif %}>{{ warehouse.name }}</option>{% endfor %}</select></div>
+      <div><strong class="form-label d-block">Itens <small class="text-secondary fw-normal">(preço em branco usa o do cadastro)</small></strong>
+        <div data-journal-lines>
+          {% for index in item_rows %}
+          <div class="row g-2 mb-2" data-journal-line>
+            <div class="col-12"><select class="form-select" name="product_{{ index }}" aria-label="Produto da linha {{ index }}"><option value="">Produto</option>{% for product in products %}<option value="{{ product.id }}" {% if form.get('product_' ~ index) == product.id|string %}selected{% endif %}>{{ product.name }} ({{ product.sku }}) — R$ {{ product.sale_price|brl }}/{{ product.unit.code }}</option>{% endfor %}</select></div>
+            <div class="col-4"><input class="form-control" name="quantity_{{ index }}" inputmode="decimal" maxlength="20" placeholder="Qtd." value="{{ form.get('quantity_' ~ index, '') }}" aria-label="Quantidade da linha {{ index }}"></div>
+            <div class="col-4"><input class="form-control" name="unit_price_{{ index }}" inputmode="decimal" maxlength="20" placeholder="Preço (R$)" value="{{ form.get('unit_price_' ~ index, '') }}" aria-label="Preço unitário da linha {{ index }}"></div>
+            <div class="col-4"><input class="form-control" name="discount_{{ index }}" inputmode="decimal" maxlength="20" placeholder="Desconto (R$)" value="{{ form.get('discount_' ~ index, '') }}" aria-label="Desconto da linha {{ index }}"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-add-journal-line>＋ Adicionar item</button>
+        {% if not products %}<small class="form-text d-block">Cadastre produtos em <a href="/products">Produtos</a>.</small>{% endif %}
+      </div>
+      <div><strong class="form-label d-block">Recebimento <small class="text-secondary fw-normal">(vira contas a receber no faturamento)</small></strong></div>
+      <div><label class="form-label" for="sales-account">Conta financeira</label><select class="form-select" id="sales-account" name="account_id" required><option value="">Selecione</option>{% for account in accounts %}<option value="{{ account.id }}" {% if form.get('account_id') == account.id|string %}selected{% endif %}>{{ account.name }}</option>{% endfor %}</select>{% if not accounts %}<small class="form-text">Cadastre uma conta em <a href="/accounts">Bancos e contas</a>.</small>{% endif %}</div>
+      <div><label class="form-label" for="sales-method">Forma de recebimento</label><select class="form-select" id="sales-method" name="payment_method">{% for key, label in payment_labels.items() %}<option value="{{ key }}" {% if form.get('payment_method') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="sales-installments">Parcelas</label><input class="form-control" id="sales-installments" name="installment_count" type="number" min="1" max="36" value="{{ form.get('installment_count','1') }}"></div><div><label class="form-label" for="sales-due-days">1ª parcela em (dias)</label><input class="form-control" id="sales-due-days" name="first_due_days" type="number" min="0" max="365" value="{{ form.get('first_due_days','0') }}"></div></div>
+      <div><label class="form-label" for="sales-notes">Observações <small class="text-secondary fw-normal">(opcional)</small></label><textarea class="form-control" id="sales-notes" name="notes" rows="2" maxlength="2000">{{ form.get('notes','') }}</textarea></div>
+    </div>
+    <div class="movement-drawer-footer"><span>As parcelas contam a partir da data do faturamento.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Criar orçamento</button></div></div>
+  </form>
+</aside>
+{% endblock %}

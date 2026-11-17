@@ -1,0 +1,62 @@
+{% extends "finance/layout.html" %}
+{% block title %}{{ number }} · Vendas · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">VENDAS · {{ 'ORÇAMENTO' if order.status == 'quote' else 'PEDIDO' }}</span><h1>{{ number }} <span class="badge {{ status_badges[order.status] }} align-middle fs-6">{{ status_labels[order.status] }}</span></h1><p>{{ order.customer.trade_name or order.customer.name }} · {{ order.order_date.strftime('%d/%m/%Y') }}{% if order.valid_until and order.status == 'quote' %} · válido até {{ order.valid_until.strftime('%d/%m/%Y') }}{% endif %}</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/sales">Voltar às vendas</a>
+    {% if order.status == 'quote' and not expired %}<form method="post" action="/sales/{{ order.id }}/confirm"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-primary" type="submit">Confirmar pedido</button></form>{% endif %}
+    {% if order.status in ['quote', 'confirmed'] %}<form method="post" action="/sales/{{ order.id }}/cancel" data-confirm="Cancelar este {{ 'orçamento' if order.status == 'quote' else 'pedido' }}?"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-danger" type="submit">Cancelar</button></form>{% endif %}
+  </div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% if expired %}<div class="alert alert-warning" role="status">Este orçamento venceu e não pode mais ser confirmado. Crie um novo com os preços atuais.</div>{% endif %}
+<section class="title-summary" aria-label="Resumo do pedido">
+  <article class="title-summary-card"><span>Total</span><strong>R$ {{ total|brl }}</strong><small>{{ lines|length }} item(ns)</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Saída</span><strong class="fs-6">{{ order.warehouse.name }}</strong><small>depósito</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Recebimento</span><strong class="fs-6">{{ payment_labels[order.payment_method] }} · {{ order.installment_count }}x</strong><small>1ª parcela {{ order.first_due_days }} dia(s) após faturar · {{ order.account.name }}</small></article>
+</section>
+
+<article class="panel-card transactions-table-card mb-3">
+  <div class="panel-heading"><div><h3>Itens</h3><p>{% if order.status == 'confirmed' %}Confira o estoque e fature o pedido.{% elif order.status == 'quote' %}Confirme o orçamento quando o cliente aceitar.{% else %}Produtos, preços e descontos do pedido.{% endif %}</p></div></div>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Produto</th><th class="text-end">Quantidade</th><th class="text-end">Preço</th><th class="text-end">Desconto</th><th class="text-end">Total</th>{% if order.status in ['quote', 'confirmed'] %}<th class="text-end">Em estoque</th>{% endif %}</tr></thead><tbody>
+    {% for line in lines %}
+    <tr><td><strong>{{ line.item.product.name }}</strong><small class="d-block text-secondary">{{ line.item.product.sku }}</small></td>
+      <td class="text-end text-nowrap">{{ line.item.quantity|quantity }} {{ line.item.product.unit.code }}</td>
+      <td class="text-end text-nowrap">R$ {{ line.item.unit_price|brl }}</td>
+      <td class="text-end text-nowrap">{% if line.item.discount > 0 %}R$ {{ line.item.discount|brl }}{% else %}—{% endif %}</td>
+      <td class="text-end text-nowrap">R$ {{ line.total|brl }}</td>
+      {% if order.status in ['quote', 'confirmed'] %}<td class="text-end text-nowrap">{% if line.item.product.tracks_stock %}<span class="{{ 'amount-expense' if line.on_hand < line.item.quantity else '' }}">{{ line.on_hand|quantity }}</span>{% else %}<span class="text-secondary">Não controla</span>{% endif %}</td>{% endif %}
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% if order.status == 'confirmed' %}
+  <form method="post" action="/sales/{{ order.id }}/invoices" class="row g-2 align-items-end mt-1">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="operation_key" value="{{ invoice_key }}">
+    <div class="col-md-3"><label class="form-label" for="invoice-date">Data do faturamento</label><input class="form-control" id="invoice-date" name="issued_on" type="date" max="{{ today }}" value="{{ today }}" required></div>
+    <div class="col-md-4"><button class="btn btn-primary w-100" type="submit">Faturar pedido</button></div>
+  </form>
+  <small class="form-text d-block mt-2">O faturamento baixa o estoque pelo custo médio, gera as contas a receber e lança receita e custo no diário. Sem estoque suficiente, nada é gravado. "Em estoque" soma todos os depósitos; a saída é só do depósito do pedido.</small>
+  {% endif %}
+  {% if order.notes %}<p class="text-secondary mt-3 mb-0"><strong>Observações:</strong> {{ order.notes }}</p>{% endif %}
+</article>
+
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Faturamentos</h3><p>Faturamento interno, sem valor fiscal. Estornar devolve a mercadoria ao estoque e cancela as contas a receber.</p></div><span class="step-count">{{ invoices|length }} faturamento(s)</span></div>
+  {% if invoices %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Nº</th><th>Data</th><th class="text-end">Venda</th><th class="text-end">Custo</th><th class="text-end">Margem</th><th>Contas a receber</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for row in invoices %}
+    <tr><td><strong>{{ row.invoice.number }}</strong><small class="d-block text-secondary">{{ row.invoice.created_by.full_name }}</small></td>
+      <td>{{ row.invoice.issued_on.strftime('%d/%m/%Y') }}</td>
+      <td class="text-end text-nowrap">R$ {{ row.invoice.total|brl }}</td>
+      <td class="text-end text-nowrap">R$ {{ row.invoice.cost_total|brl }}</td>
+      <td class="text-end text-nowrap {{ 'amount-expense' if row.margin < 0 else 'amount-income' }}">R$ {{ row.margin|brl }}{% if row.margin_percent is not none %}<small class="d-block">{{ row.margin_percent|string|replace('.', ',') }}%</small>{% endif %}</td>
+      <td>{% for title in titles[row.invoice.id] %}<small class="d-block text-nowrap">{{ title.due_date.strftime('%d/%m/%Y') }} · R$ {{ title.original_amount|brl }}{% if title.status == 'settled' %} · recebido{% elif title.status == 'partial' %} · recebido em parte{% elif title.status == 'cancelled' %} · cancelado{% endif %}</small>{% else %}—{% endfor %}</td>
+      <td><span class="badge {{ 'text-bg-success' if row.invoice.status == 'posted' else 'text-bg-secondary' }}">{{ 'Efetivado' if row.invoice.status == 'posted' else 'Estornado' }}</span></td>
+      <td>{% if row.invoice.status == 'posted' %}<form method="post" action="/sales/invoices/{{ row.invoice.id }}/reverse" data-confirm="Estornar este faturamento? A mercadoria volta ao estoque e as contas a receber dele são canceladas."><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-danger" type="submit">Estornar</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="finance-empty"><span>↗</span><strong>Ainda não faturado</strong><small>O faturamento deste pedido aparece aqui.</small></div>{% endif %}
+</article>
+{% endblock %}

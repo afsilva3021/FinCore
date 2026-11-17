@@ -675,3 +675,123 @@ class PurchaseReceiptItem(Model):
     stock_movement = fields.OneToOneField(
         "models.StockMovement", related_name="purchase_receipt_item", on_delete=fields.RESTRICT
     )
+
+
+# --- Vendas (ERP, fase 11) --------------------------------------------------------------
+
+
+class SalesOrder(Model):
+    """Orçamento que vira pedido de venda. Só o faturamento mexe em estoque e financeiro."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="sales_orders", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_sales_orders", on_delete=fields.RESTRICT
+    )
+    number = fields.IntField()
+    customer = fields.ForeignKeyField(
+        "models.Counterparty", related_name="sales_orders", on_delete=fields.RESTRICT
+    )
+    warehouse = fields.ForeignKeyField(
+        "models.Warehouse", related_name="sales_orders", on_delete=fields.RESTRICT
+    )
+    # Conta financeira sugerida para os títulos a receber gerados no faturamento.
+    account = fields.ForeignKeyField(
+        "models.FinancialAccount", related_name="sales_orders", on_delete=fields.RESTRICT
+    )
+    status = fields.CharField(max_length=12, default="quote")
+    order_date = fields.DateField()
+    # Validade do orçamento; depois dela não pode mais ser confirmado.
+    valid_until = fields.DateField(null=True)
+    payment_method = fields.CharField(max_length=24, default="pix")
+    installment_count = fields.IntField(default=1)
+    # Dias entre o faturamento e o vencimento da primeira parcela.
+    first_due_days = fields.IntField(default=0)
+    notes = fields.TextField(null=True)
+    operation_key = fields.UUIDField(null=True, unique=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "number"),)
+
+
+class SalesOrderItem(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    order = fields.ForeignKeyField(
+        "models.SalesOrder", related_name="items", on_delete=fields.CASCADE
+    )
+    product = fields.ForeignKeyField(
+        "models.Product", related_name="sales_items", on_delete=fields.RESTRICT
+    )
+    position = fields.IntField()
+    quantity = fields.DecimalField(max_digits=15, decimal_places=4)
+    unit_price = fields.DecimalField(max_digits=15, decimal_places=2)
+    # Desconto em reais sobre a linha (quantidade x preço).
+    discount = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+
+    class Meta:
+        unique_together = (("order", "position"),)
+
+
+class SalesInvoice(Model):
+    """Faturamento interno do pedido: baixa estoque, gera contas a receber, receita e CMV."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="sales_invoices", on_delete=fields.CASCADE
+    )
+    order = fields.ForeignKeyField(
+        "models.SalesOrder", related_name="invoices", on_delete=fields.RESTRICT
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_sales_invoices", on_delete=fields.RESTRICT
+    )
+    number = fields.IntField()
+    issued_on = fields.DateField()
+    total = fields.DecimalField(max_digits=15, decimal_places=2)
+    # Custo das mercadorias vendidas, ao custo médio do momento do faturamento.
+    cost_total = fields.DecimalField(max_digits=15, decimal_places=2)
+    status = fields.CharField(max_length=12, default="posted")
+    operation_key = fields.UUIDField(unique=True)
+    revenue_entry = fields.ForeignKeyField(
+        "models.JournalEntry",
+        related_name="sales_revenue_invoices",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
+    cost_entry = fields.ForeignKeyField(
+        "models.JournalEntry",
+        related_name="sales_cost_invoices",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
+    reversed_at = fields.DatetimeField(null=True)
+    reversed_by = fields.ForeignKeyField(
+        "models.User", related_name="reversed_sales_invoices", null=True, on_delete=fields.RESTRICT
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "number"),)
+
+
+class SalesInvoiceItem(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    invoice = fields.ForeignKeyField(
+        "models.SalesInvoice", related_name="items", on_delete=fields.CASCADE
+    )
+    order_item = fields.ForeignKeyField(
+        "models.SalesOrderItem", related_name="invoice_items", on_delete=fields.RESTRICT
+    )
+    quantity = fields.DecimalField(max_digits=15, decimal_places=4)
+    total = fields.DecimalField(max_digits=15, decimal_places=2)
+    cost = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    # Vazio para produtos que não controlam estoque.
+    stock_movement = fields.OneToOneField(
+        "models.StockMovement",
+        related_name="sales_invoice_item",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )

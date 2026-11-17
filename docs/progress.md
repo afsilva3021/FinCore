@@ -250,4 +250,23 @@ Segunda fase do roteiro em [erp-roadmap.md](erp-roadmap.md). Compras e vendas ai
 - [ ] Pedidos de compra aceitam só produtos com controle de estoque; despesas sem estoque continuam em Contas a pagar.
 - [ ] A API de compras é só de consulta; criar, aprovar e receber é pelas páginas.
 - [ ] Os relatórios financeiros continuam em regime de caixa: o pagamento de uma compra aparece como despesa do período no relatório, embora no diário quite Fornecedores.
-- [ ] Telas de compras ainda não foram abertas no navegador (previsto junto com vendas).
+- [x] Telas de compras abertas no Chrome junto com as de vendas (fase 11).
+
+## ERP fase 11 — vendas (2026-11-17)
+
+- [x] Modelos `SalesOrder`, `SalesOrderItem`, `SalesInvoice` e `SalesInvoiceItem`; migration `0022` aditiva, aplicada em banco limpo e no banco de teste. Um pedido tem no máximo um faturamento efetivado (índice único parcial).
+- [x] Orçamento → pedido confirmado → faturado, ou cancelado antes do faturamento. Orçamento vencido não é confirmado. Numeração `PV-00001` sem buracos.
+- [x] Faturamento do pedido inteiro numa única transação: saída de estoque ao custo médio, contas a receber com parcelas exatas, D Clientes / C Receita de vendas e D CMV / C Estoque. Produto sem controle de estoque entra só na receita.
+- [x] Sem estoque suficiente, nada é gravado (nem título, nem diário, nem número gasto). Três pedidos disputando as últimas unidades: só um fatura.
+- [x] Recebimento de título de venda quita Clientes; a receita não é lançada de novo. Desconto concedido e tarifas vão para despesas financeiras; juros e multa recebidos, para receitas financeiras.
+- [x] Devolução total (estorno do faturamento): a mercadoria volta pelo custo com que saiu, mesmo que o custo médio tenha mudado; títulos são cancelados e receita e CMV invertidos; o pedido volta a confirmado. Recusada se algum título já foi recebido.
+- [x] Margem bruta do faturamento (venda − custo, e %) na página do pedido.
+- [x] Páginas `/sales` e `/sales/{id}`; API de consulta `/api/v1/sales-orders`. Preço em branco no item usa o preço de venda do cadastro.
+- [x] Perfil `sales` (Vendas): opera vendas e cadastra contatos.
+- [x] Isolamento: 6 tentativas e 2 listagens novas. Seed com venda faturada, pedido confirmado e orçamento.
+- [x] Fluxo real no Chrome, compras e vendas: pedido de compra com dois itens pelo formulário, aprovação, recebimento parcial e estorno; faturamento de venda, novo orçamento, e conferência dos reflexos em estoque, contas a pagar e a receber.
+- [x] Correção de interface: nas páginas de detalhe o menu lateral abria o grupo errado; agora vale o item que o servidor marca como ativo.
+- [x] Ruff e suíte completa aprovados: 264 testes (166 unitários, 98 de integração).
+- [ ] Diferenças em relação ao roteiro: orçamento e pedido são o mesmo registro (`SalesOrder`) em estados diferentes, o faturamento é sempre do pedido inteiro e a devolução é sempre total.
+- [ ] Sem reserva de estoque na confirmação: o estoque é conferido no faturamento.
+- [ ] Desconto só por item; rascunho não é editado; API só de consulta.

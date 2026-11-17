@@ -23,8 +23,9 @@
         <a class="nav-link {% if active == 'stock-movements' %}active{% endif %}" href="/stock/movements"><span>⇅</span> Movimentações</a>
         <a class="nav-link {% if active == 'product-settings' %}active{% endif %}" href="/product-settings"><span>☰</span> Grupos e depósitos</a>
       </div>
-      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-commercial"><span>COMPRAS</span><i aria-hidden="true">⌄</i></button>
+      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-commercial"><span>VENDAS E COMPRAS</span><i aria-hidden="true">⌄</i></button>
       <div class="nav-group" id="nav-commercial" hidden>
+        <a class="nav-link {% if active == 'sales' %}active{% endif %}" href="/sales"><span>↗</span> Vendas</a>
         <a class="nav-link {% if active == 'purchases' %}active{% endif %}" href="/purchases"><span>↘</span> Pedidos de compra</a>
       </div>
       <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-management"><span>GESTÃO</span><i aria-hidden="true">⌄</i></button>

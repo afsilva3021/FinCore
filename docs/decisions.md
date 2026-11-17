@@ -43,3 +43,6 @@
 - **Estorno de documento desfaz pelo valor original:** diferente do estorno manual de estoque, não exige ser o último movimento; exige que quantidade e valor ainda estejam na posição.
 - **Numeração por `DocumentSequence`:** contador por organização e tipo, bloqueado dentro da transação do documento, o que evita número repetido e buraco quando a gravação falha.
 - **Pedido de compra só com produtos de estoque e sem edição de rascunho:** simplificações desta fase, registradas como pendência.
+- **Orçamento e pedido no mesmo registro (fase 11):** `SalesOrder` passa por `quote → confirmed → invoiced`; evita duplicar itens entre duas entidades. O faturamento é do pedido inteiro e a devolução é total; faturamento e devolução parciais ficam como evolução.
+- **Devolução pelo custo original:** o estorno do faturamento usa o valor do movimento de saída, não o custo médio atual, para que estoque e CMV voltem exatamente ao que eram.
+- **Preço do item:** em branco usa o preço de venda do cadastro no momento do orçamento; depois disso o preço do pedido não muda com o cadastro.
