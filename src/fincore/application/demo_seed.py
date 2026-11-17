@@ -17,10 +17,11 @@ from fincore.application.finance import (
     create_transfer,
 )
 from fincore.application.identity import register_user
+from fincore.application.inventory import register_stock_movement, transfer_stock
 from fincore.application.members import add_member
 from fincore.application.products import save_product, save_product_group, save_warehouse
 from fincore.application.titles import create_titles, settle_title
-from fincore.infrastructure.models import Membership, UnitOfMeasure, User
+from fincore.infrastructure.models import Membership, UnitOfMeasure, User, Warehouse
 
 DEMO_ORGANIZATION = "Padaria Exemplo (dados fictícios)"
 DEMO_EMAIL = "demo@fincore.example"
@@ -42,14 +43,24 @@ INCOME = [
     ("Vendas cartão maquininha", "Vendas balcão", "5300.00"),
     ("Encomenda coffee break empresa", "Encomendas", "2100.00"),
 ]
-# (código, descrição, grupo, unidade, preço de venda, estoque mínimo)
+# (código, descrição, grupo, unidade, preço de venda, estoque mínimo, saldo inicial, custo)
+# Sem saldo inicial = produto sem controle de estoque (feito na hora).
 PRODUCTS = [
-    ("PAO-FRANCES", "Pão francês", "Pães", "KG", "18.90", "5"),
-    ("PAO-QUEIJO", "Pão de queijo", "Pães", "KG", "49.90", "2.5"),
-    ("BOLO-CENOURA", "Bolo de cenoura com chocolate", "Confeitaria", "UN", "38.00", "2"),
-    ("SONHO-CREME", "Sonho de creme", "Confeitaria", "UN", "7.50", "12"),
-    ("CAFE-COADO", "Café coado 200 ml", "Bebidas", "UN", "5.00", "0"),
-    ("SUCO-LARANJA", "Suco de laranja 1 L", "Bebidas", "L", "16.00", "3"),
+    ("PAO-FRANCES", "Pão francês", "Pães", "KG", "18.90", "5", "12.5", "7.20"),
+    ("PAO-QUEIJO", "Pão de queijo", "Pães", "KG", "49.90", "2.5", "4", "21.50"),
+    (
+        "BOLO-CENOURA",
+        "Bolo de cenoura com chocolate",
+        "Confeitaria",
+        "UN",
+        "38.00",
+        "2",
+        "6",
+        "14.00",
+    ),
+    ("SONHO-CREME", "Sonho de creme", "Confeitaria", "UN", "7.50", "12", "8", "2.80"),
+    ("CAFE-COADO", "Café coado 200 ml", "Bebidas", "UN", "5.00", "0", None, None),
+    ("SUCO-LARANJA", "Suco de laranja 1 L", "Bebidas", "L", "16.00", "3", "10", "6.50"),
 ]
 
 
@@ -153,13 +164,17 @@ async def seed_demo(today: date | None = None) -> str:
         payment_terms="cash",
         installment_count=1,
     )
-    await save_warehouse(organization=organization, user=owner, code="VITRINE", name="Vitrine")
+    showcase = await save_warehouse(
+        organization=organization, user=owner, code="VITRINE", name="Vitrine"
+    )
+    main_warehouse = await Warehouse.get(organization=organization, is_default=True)
     units = {unit.code: unit for unit in await UnitOfMeasure.filter(organization=organization)}
     groups = {}
-    for name in sorted({group for _, _, group, _, _, _ in PRODUCTS}):
+    for name in sorted({item[2] for item in PRODUCTS}):
         groups[name] = await save_product_group(organization=organization, user=owner, name=name)
-    for sku, name, group, unit, price, min_stock in PRODUCTS:
-        await save_product(
+    stock_day = today - timedelta(days=3)
+    for sku, name, group, unit, price, min_stock, opening, cost in PRODUCTS:
+        product = await save_product(
             organization=organization,
             user=owner,
             sku=sku,
@@ -168,7 +183,45 @@ async def seed_demo(today: date | None = None) -> str:
             unit_id=units[unit].id,
             sale_price=Decimal(price),
             min_stock=Decimal(min_stock),
-            # Café coado é feito na hora: não tem estoque a controlar.
-            tracks_stock=sku != "CAFE-COADO",
+            tracks_stock=opening is not None,
         )
+        if opening is None:
+            continue
+        await register_stock_movement(
+            organization=organization,
+            user=owner,
+            operation_key=uuid4(),
+            direction="in",
+            reason="opening",
+            product_id=product.id,
+            warehouse_id=main_warehouse.id,
+            quantity=Decimal(opening),
+            unit_cost=Decimal(cost),
+            occurred_on=stock_day,
+        )
+        if sku == "BOLO-CENOURA":
+            await transfer_stock(
+                organization=organization,
+                user=owner,
+                operation_key=uuid4(),
+                product_id=product.id,
+                source_warehouse_id=main_warehouse.id,
+                destination_warehouse_id=showcase.id,
+                quantity=Decimal("2"),
+                occurred_on=today,
+                notes="Reposição da vitrine",
+            )
+        if sku == "PAO-FRANCES":
+            await register_stock_movement(
+                organization=organization,
+                user=owner,
+                operation_key=uuid4(),
+                direction="out",
+                reason="adjustment",
+                product_id=product.id,
+                warehouse_id=main_warehouse.id,
+                quantity=Decimal("1.5"),
+                occurred_on=today,
+                notes="Sobras do dia descartadas",
+            )
     return DEMO_EMAIL

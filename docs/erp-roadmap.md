@@ -1,6 +1,6 @@
 # FinCore ERP — roteiro de transformação
 
-> **Situação: aprovado em 2026-11-17.** Fase 8 concluída; fases 9 a 13 pendentes. Cada fase segue o fluxo do `AGENTS.md` (regra, testes, migration, documentação) e o que foi validado fica em `docs/progress.md`.
+> **Situação: aprovado em 2026-11-17.** Fases 8 e 9 concluídas; fases 10 a 13 pendentes. Cada fase segue o fluxo do `AGENTS.md` (regra, testes, migration, documentação) e o que foi validado fica em `docs/progress.md`.
 
 ## 1. Objetivo e escopo
 
@@ -11,7 +11,7 @@ Módulos novos, na ordem de entrega:
 | Fase | Módulo | Resultado utilizável |
 |---|---|---|
 | 8 | Cadastros de produto ✅ | Produtos, unidades, grupos e depósitos |
-| 9 | Estoque | Entradas, saídas, ajustes, transferências, saldo e custo médio |
+| 9 | Estoque ✅ | Entradas, saídas, ajustes, transferências, saldo e custo médio |
 | 10 | Compras | Pedido de compra → recebimento → estoque + contas a pagar |
 | 11 | Vendas | Orçamento → pedido → faturamento → baixa de estoque + contas a receber |
 | 12 | CRM | Leads, funil de oportunidades e atividades ligados a vendas |
@@ -79,13 +79,15 @@ Nomes provisórios; todas as tabelas têm `organization`, `created_by`, `created
 
 Aceite: cadastro, edição, inativação e busca; SKU duplicado recusado; isolamento entre organizações; páginas `/products` e `/product-settings` (grupos, unidades e depósitos); API `/api/v1/products`.
 
-### Fase 9 — Estoque
+### Fase 9 — Estoque (concluída)
 
-- `StockMovement`: imutável. Produto, depósito, tipo (`entrada`, `saída`, `ajuste`, `transferência`), quantidade `NUMERIC(15,4)`, custo unitário, origem (documento e linha), `operation_key`, referência ao movimento estornado.
-- `StockBalance`: quantidade e custo médio por produto/depósito, mantido na mesma transação do movimento como **cache**; a fonte da verdade são os movimentos, com teste que compara os dois.
+- `StockMovement`: imutável. Produto, depósito, sentido (`in`/`out`), motivo (saldo inicial, ajuste, transferência, estorno; `purchase` e `sale` reservados), quantidade `NUMERIC(15,4)`, custo unitário e total, saldo após o movimento, origem (documento), `operation_key`, referência ao movimento estornado e ao lançamento contábil.
+- `StockBalance`: quantidade e valor total por produto/depósito (custo médio = valor ÷ quantidade), mantido na mesma transação do movimento como **cache**; a fonte da verdade são os movimentos, com teste que compara os dois.
 - `domain/inventory.py`: custo médio, validação de saldo, arredondamento.
 
-Aceite: saldo sempre igual à soma dos movimentos; saída sem saldo recusada inclusive em concorrência; reenvio não duplica; estorno preserva histórico; transferência entre depósitos não altera o custo total; ajuste gera lançamento contábil balanceado; páginas `/stock` (posição, kardex, ajuste, abaixo do mínimo).
+Aceite: saldo sempre igual à soma dos movimentos; saída sem saldo recusada inclusive em concorrência; reenvio não duplica; estorno preserva histórico; transferência entre depósitos não altera o custo total; ajuste gera lançamento contábil balanceado; páginas `/stock` (posição, abaixo do mínimo, formulário de movimentação) e `/stock/movements` (histórico e estorno); API `/api/v1/stock`.
+
+Regra acrescentada na implementação: só o último movimento de uma posição pode ser estornado (o passado é corrigido por ajuste).
 
 ### Fase 10 — Compras
 
@@ -137,4 +139,4 @@ Aceite: totais do documento batem com o faturamento; numeração sem buracos nem
 
 ## 7. Próximo passo
 
-**Fase 9 (estoque):** movimentos imutáveis, saldo derivado, custo médio e lançamento contábil dos ajustes. Ela destrava Compras e Vendas.
+**Fase 10 (compras):** pedido de compra, recebimento total ou parcial com entrada em estoque (motivo `purchase`) e títulos a pagar lançados por competência (D Estoque / C Fornecedores). É a primeira fase que muda `FinancialTitle` (origem do título) e `settle_title`.

@@ -56,3 +56,9 @@ def test_presentation_does_not_query_the_orm_directly(path: Path) -> None:
         and node.func.attr in ORM_METHODS
     ]
     assert offending == [], "use fincore.application.queries ou um caso de uso"
+
+
+@pytest.mark.parametrize("path", _modules("presentation/routes"), ids=lambda path: path.name)
+def test_routes_read_the_url_through_the_decoding_helper(path: Path) -> None:
+    # O servidor entrega os parâmetros da URL sem decodificar; `_query()` decodifica.
+    assert "request.query_params" not in path.read_text(), "use _query(request)"

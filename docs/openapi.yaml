@@ -6,7 +6,7 @@ info:
     API JSON do FinCore. Autenticação por cookie de sessão (faça login em /login);
     toda requisição de escrita exige o header `X-CSRF-Token` com o token de
     `GET /api/v1/session`. Valores monetários são strings decimais com ponto ("250.00").
-    Perfil `viewer` recebe 403 em qualquer escrita; produtos exigem perfil `owner` ou
+    Perfil `viewer` recebe 403 em qualquer escrita; produtos e estoque exigem perfil `owner` ou
     `stock`, e as demais escritas, `owner` ou `finance`.
 servers:
   - url: http://127.0.0.1:8080
@@ -33,6 +33,11 @@ components:
       schema: {type: integer, minimum: 0, default: 0}
     TitleId:
       name: title_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    StockMovementId:
+      name: movement_id
       in: path
       required: true
       schema: {type: string, format: uuid}
@@ -103,6 +108,58 @@ components:
         sale_price: {$ref: '#/components/schemas/Money'}
         min_stock: {$ref: '#/components/schemas/Quantity'}
         tracks_stock: {type: boolean, default: true}
+    StockBalance:
+      type: object
+      properties:
+        product_id: {type: string, format: uuid}
+        sku: {type: string}
+        product_name: {type: string}
+        unit: {type: string, examples: [UN]}
+        warehouse_id: {type: string, format: uuid}
+        warehouse_code: {type: string}
+        quantity: {$ref: '#/components/schemas/Quantity'}
+        average_cost: {type: string, description: Custo médio unitário com 6 casas., examples: ["6.000000"]}
+        total_value: {$ref: '#/components/schemas/Money'}
+    StockMovement:
+      type: object
+      description: Movimento de estoque efetivado; imutável.
+      properties:
+        id: {type: string, format: uuid}
+        product_id: {type: string, format: uuid}
+        warehouse_id: {type: string, format: uuid}
+        sequence: {type: integer, description: Ordem do movimento na posição (produto + depósito).}
+        direction: {type: string, enum: [in, out]}
+        reason: {type: string, enum: [opening, adjustment, transfer, reversal, purchase, sale]}
+        quantity: {$ref: '#/components/schemas/Quantity'}
+        unit_cost: {type: string, examples: ["6.000000"]}
+        total_cost: {$ref: '#/components/schemas/Money'}
+        balance_quantity: {$ref: '#/components/schemas/Quantity'}
+        balance_value: {$ref: '#/components/schemas/Money'}
+        occurred_on: {type: string, format: date}
+        notes: {type: [string, "null"]}
+        transfer_id: {type: [string, "null"], format: uuid}
+        reversal_of_id: {type: [string, "null"], format: uuid}
+        journal_entry_id: {type: [string, "null"], format: uuid}
+    StockMovementCreate:
+      type: object
+      required: [type, operation_key, product_id, warehouse_id, quantity, occurred_on]
+      properties:
+        type:
+          type: string
+          enum: [opening, entry, exit, transfer]
+          description: Saldo inicial, ajuste de entrada, ajuste de saída ou transferência.
+        operation_key: {type: string, format: uuid, description: Chave de idempotência.}
+        product_id: {type: string, format: uuid}
+        warehouse_id: {type: string, format: uuid, description: Depósito (de origem, na transferência).}
+        destination_warehouse_id: {type: string, format: uuid, description: Obrigatório na transferência.}
+        quantity: {$ref: '#/components/schemas/Quantity'}
+        unit_cost: {$ref: '#/components/schemas/Quantity', description: Só para opening e entry; saídas usam o custo médio.}
+        occurred_on: {type: string, format: date, description: Não pode estar no futuro.}
+        notes: {type: string, maxLength: 240}
+    StockMovementList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/StockMovement'}}
     Title:
       type: object
       properties:
@@ -257,6 +314,89 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/Product'}}}
         "401": {$ref: '#/components/responses/Unauthenticated'}
         "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/stock/balances:
+    get:
+      summary: Posição de estoque por produto e depósito
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: product_id, in: query, schema: {type: string, format: uuid}}
+        - {name: warehouse_id, in: query, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Posições que já tiveram movimento, com custo médio e valor.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/StockBalance'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/stock/movements:
+    get:
+      summary: Histórico de movimentos de estoque
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: product_id, in: query, schema: {type: string, format: uuid}}
+        - {name: warehouse_id, in: query, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Movimentos, do mais recente para o mais antigo.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/StockMovement'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      summary: Registra entrada, saída ou transferência
+      description: |
+        Grava o movimento, atualiza a posição e lança no diário numa única transação.
+        Saída ou transferência maior que o saldo é recusada. Transferência devolve dois
+        movimentos (saída da origem e entrada no destino).
+      security: [{session: [], csrf: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/StockMovementCreate'}}}
+      responses:
+        "200":
+          description: Reenvio com a mesma operation_key; devolve os movimentos já gravados.
+          content: {application/json: {schema: {$ref: '#/components/schemas/StockMovementList'}}}
+        "201":
+          description: Movimentos criados.
+          content: {application/json: {schema: {$ref: '#/components/schemas/StockMovementList'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/stock/movements/{movement_id}/reverse:
+    post:
+      summary: Estorna um movimento de estoque
+      description: |
+        Cria o movimento oposto e preserva o original. Só o último movimento da posição
+        pode ser estornado; uma transferência é desfeita nas duas pernas.
+      security: [{session: [], csrf: []}]
+      parameters:
+        - {$ref: '#/components/parameters/StockMovementId'}
+      responses:
+        "201":
+          description: Movimentos de estorno criados.
+          content: {application/json: {schema: {$ref: '#/components/schemas/StockMovementList'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
   /api/v1/titles:
     get:
       summary: Lista títulos a pagar/receber

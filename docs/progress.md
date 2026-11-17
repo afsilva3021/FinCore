@@ -199,10 +199,9 @@ Primeira fase do roteiro em [erp-roadmap.md](erp-roadmap.md). Não há estoque, 
 - [x] Telas abertas no Chrome com os dados do seed (lista, drawer e cadastros auxiliares). Bootstrap foi servido de uma cópia local porque o ambiente não alcança a CDN.
 - [x] Marcadores de conflito de merge que estavam neste arquivo foram removidos, preservando as duas seções.
 - [ ] Não validado neste ambiente: `docker compose up --build` (sem Docker) e o job `docker` do CI.
-- [ ] Trocar a unidade de um produto ainda é livre; a fase 9 deve bloquear quando houver movimento de estoque.
+- [x] Trocar a unidade de um produto com movimentos de estoque passou a ser recusado na fase 9.
 - [ ] `infrastructure/models.py` continua em arquivo único; a divisão por área proposta no roteiro fica para depois, porque o teste de arquitetura lê esse arquivo.
 
-Próximo passo: fase 9 (estoque) — movimentos imutáveis, saldo derivado, custo médio e lançamento contábil dos ajustes.
 
 ## Demonstração online (2026-11-17)
 
@@ -210,3 +209,28 @@ Próximo passo: fase 9 (estoque) — movimentos imutáveis, saldo derivado, cust
 - [x] Comando de início validado localmente com URL `postgresql://` em banco limpo: primeira subida aplica 0001→0019, cria o seed e responde `/health`; segunda subida mantém os dados e sobe normalmente.
 - [ ] Não validado: a publicação no Render (exige a conta do responsável). O build da imagem também não foi executado neste ambiente.
 
+## ERP fase 9 — estoque (2026-11-17)
+
+Segunda fase do roteiro em [erp-roadmap.md](erp-roadmap.md). Compras e vendas ainda não existem; as movimentações são manuais.
+
+- [x] Modelos `StockMovement` (imutável) e `StockBalance` (cache da posição); migration `0020` aditiva, aplicada em banco limpo (0001→0020) e no banco de teste já populado. `makemigrations` responde `No changes detected`.
+- [x] Custo médio ponderado móvel em `domain/inventory.py`: a posição guarda quantidade e valor total, saídas usam o custo médio vigente e a saída que zera a quantidade leva todo o valor, então não sobra nem falta centavo. Testado sem banco.
+- [x] Entrada (saldo inicial ou ajuste), saída (ajuste), transferência entre depósitos e estorno em `application/inventory.py`, cada um numa única transação com a posição bloqueada (`SELECT ... FOR UPDATE`).
+- [x] Estoque negativo bloqueado: 12 saídas simultâneas de 1 unidade com saldo 5 gravam exatamente 5; transferências simultâneas em sentidos opostos não travam (posições bloqueadas sempre na mesma ordem).
+- [x] Idempotência por `operation_key`: reenvio e 6 envios simultâneos com a mesma chave gravam um movimento só; chave de outra organização é conflito.
+- [x] Estorno por movimento oposto que restaura quantidade e valor exatos; só o último movimento da posição pode ser estornado, e a transferência é desfeita nas duas pernas ou em nenhuma.
+- [x] Contabilidade: saldo inicial (D Estoque / C Patrimônio de abertura), ajuste de entrada (D Estoque / C Ajustes positivos) e ajuste de saída (D Perdas / C Estoque) geram lançamento efetivado e balanceado; o estorno gera o lançamento inverso ligado ao original. O saldo da conta `SYS-STOCK` bate com o valor das posições. Regras em `docs/accounting.md`.
+- [x] Banco reforça as regras: `CHECK` de quantidades e valores não negativos e de sentidos/motivos, sequência única por posição e gatilho que recusa `UPDATE`/`DELETE` em `stockmovement`.
+- [x] Teste de consistência: em cada cenário, a posição guardada é comparada com a soma dos movimentos (quantidade e valor) e com a fotografia do último movimento.
+- [x] Páginas `/stock` (posição, valor em estoque, abaixo do mínimo, formulário de movimentação) e `/stock/movements` (histórico com estorno); coluna "Em estoque" em `/products`. API `/api/v1/stock/balances` e `/api/v1/stock/movements` (listar, movimentar, estornar); `docs/openapi.yaml` validado.
+- [x] Produto com movimentos não troca de unidade; produto com saldo não desliga o controle de estoque; depósito com saldo não é inativado.
+- [x] Permissão: área de escrita `inventory` para `/stock` e `/api/v1/stock`; `owner` e `stock` movimentam, `finance` e `viewer` só consultam.
+- [x] Isolamento entre organizações: 5 novas tentativas de escrita e 5 listagens no teste de isolamento.
+- [x] Correção encontrada no navegador: o servidor Robyn entrega os parâmetros da URL sem decodificar, então mensagens de confirmação apareciam como `Contato+cadastrado.` e buscas com acento ou espaço não encontravam nada (os testes não pegavam porque o cliente de teste já entrega o valor decodificado). Todas as rotas passaram a ler a URL por `_query()` em `presentation/web.py`.
+- [x] Ruff e suíte completa aprovados: 227 testes (151 unitários, 76 de integração com PostgreSQL 16 local), também com o usuário restrito do banco.
+- [x] Fluxo real no Chrome com os dados do seed: transferência pelo formulário, saída recusada por falta de saldo com o formulário preservado, estorno com confirmação e campos que mudam conforme o tipo.
+- [ ] Não validado neste ambiente: `docker compose up --build` (sem Docker) e o job `docker` do CI.
+- [ ] O histórico é ordenado pela ordem de registro; a data informada é só informativa e não reordena o custo médio.
+- [ ] O formulário de movimentação lista todos os produtos num `select`; com muitos produtos vai precisar de busca.
+
+Próximo passo: fase 10 (compras) — pedido de compra, recebimento com entrada em estoque e contas a pagar por competência.

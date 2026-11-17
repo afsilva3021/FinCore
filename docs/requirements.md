@@ -56,3 +56,23 @@ Autenticação, organizações, lançamentos, plano de contas, integrações ban
 - A organização tem sempre exatamente um depósito padrão; o padrão não pode ser inativado.
 - Produto, grupo, unidade e depósito de uma organização não são lidos nem alterados por outra.
 - Perfil Estoque altera cadastros de produto e só consulta o financeiro; Financeiro, o inverso; Somente leitura não altera nada.
+
+## Fase 9 — Estoque (ERP)
+
+### Histórias de usuário
+
+- Como responsável pelo estoque, quero registrar o saldo inicial, entradas, saídas e transferências entre depósitos para saber quanto tenho e quanto vale.
+- Como responsável pelo estoque, quero ver o histórico de cada produto e estornar um lançamento errado sem apagar nada.
+- Como proprietário, quero ver o valor do estoque e os produtos abaixo do mínimo.
+- Como contador, quero que os ajustes de estoque apareçam no diário e que a conta de estoque bata com as posições.
+
+### Critérios de aceite
+
+- A posição de cada produto em cada depósito é igual à soma dos movimentos, em quantidade e em valor.
+- Saída ou transferência maior que o saldo é recusada, inclusive em envios simultâneos, e nada é gravado.
+- Reenviar a mesma operação não movimenta o estoque duas vezes.
+- Transferência move quantidade e o mesmo valor entre depósitos e não gera lançamento contábil.
+- Movimento gravado não é alterado nem apagado, nem direto no banco; o estorno cria o movimento oposto e preserva o original.
+- Ajustes geram lançamento com débitos iguais aos créditos; o estorno gera o lançamento inverso.
+- Quantidades respeitam as casas decimais da unidade do produto.
+- Só os perfis Proprietário e Estoque movimentam; movimentos de uma organização não são vistos nem alterados por outra.

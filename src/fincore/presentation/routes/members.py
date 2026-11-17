@@ -19,6 +19,7 @@ from fincore.presentation.web import (
     _form_data,
     _form_uuid,
     _page,
+    _query,
     _redirect,
     _render_members,
     _response,
@@ -50,7 +51,7 @@ def register_member_routes(app: object) -> None:
                 user,
                 membership,
                 organization,
-                message=request.query_params.get("message", None),
+                message=_query(request).get("message", None),
             )
         )
 

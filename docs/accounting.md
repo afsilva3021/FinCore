@@ -38,3 +38,24 @@ O usuário define códigos e contas da própria organização. O sistema não de
 - A conta superior precisa pertencer à organização e ter a mesma natureza contábil. Apenas grupos sintéticos podem ser selecionados como superiores.
 - Categorias financeiras também aceitam grupos sintéticos e subcategorias analíticas. Uma subcategoria precisa pertencer a um grupo sintético do mesmo tipo (receita ou despesa); movimentações só aceitam categorias analíticas.
 - Categorias analíticas mantêm o vínculo com suas contas de receita/despesa no razão. Os grupos sintéticos agregam os saldos contábeis das contas filhas.
+
+## Estoque
+
+O estoque é avaliado pelo **custo médio ponderado móvel**. Cada posição (produto em um depósito) guarda quantidade e valor total; o custo médio é valor ÷ quantidade. Entradas somam quantidade e valor; saídas retiram a quantidade pelo custo médio vigente, e a saída que zera a quantidade leva todo o valor restante. Assim a soma dos movimentos é sempre igual ao valor da posição.
+
+Movimentos manuais lançam no diário na mesma transação do movimento, já efetivados:
+
+| Movimento | Débito | Crédito |
+|---|---|---|
+| Saldo inicial | `SYS-STOCK` Estoque de mercadorias (ativo) | `SYS-EQUITY` Patrimônio de abertura |
+| Ajuste de entrada (sobra) | `SYS-STOCK` | `SYS-STOCK-GAIN` Ajustes positivos de estoque (receita) |
+| Ajuste de saída (perda, quebra, consumo) | `SYS-STOCK-LOSS` Perdas e ajustes de estoque (despesa) | `SYS-STOCK` |
+| Transferência entre depósitos | — | — |
+| Estorno | inverso do lançamento original, com referência a ele | |
+
+- Transferência não muda o valor total do estoque, por isso não gera lançamento.
+- Movimento de valor zero (entrada com custo zero) não gera lançamento, porque um lançamento precisa de valores positivos.
+- As contas `SYS-STOCK*` são criadas na primeira movimentação da organização e podem ser renomeadas no plano de contas; o código identifica a conta.
+- O saldo de `SYS-STOCK` deve ser igual à soma do valor das posições de estoque. Lançamentos manuais nessa conta quebram essa igualdade.
+- Movimentos são imutáveis. Só o último movimento de uma posição pode ser estornado; estornar um movimento antigo mudaria o custo médio de tudo o que veio depois, então o passado é corrigido por ajuste.
+- Compras e vendas (fases 10 e 11) usarão os motivos `purchase` e `sale` e lançarão contra Fornecedores e CMV.

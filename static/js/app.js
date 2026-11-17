@@ -540,3 +540,18 @@ document.querySelectorAll('[data-branch-mask]').forEach((input) => {
   });
   select.addEventListener('change', () => { if (select.value !== suggestedValue) { suggestedValue = null; clearHint(); } });
 })();
+
+// Formulário de movimentação de estoque: mostra só os campos do tipo escolhido.
+// Campos escondidos ficam desabilitados para não serem enviados.
+document.querySelectorAll('[data-stock-kind]').forEach((select) => {
+  const form = select.closest('form');
+  const sync = () => {
+    form.querySelectorAll('[data-stock-for]').forEach((element) => {
+      const visible = element.dataset.stockFor.split(' ').includes(select.value);
+      element.hidden = !visible;
+      element.querySelectorAll('input, select').forEach((field) => { field.disabled = !visible; });
+    });
+  };
+  select.addEventListener('change', sync);
+  sync();
+});

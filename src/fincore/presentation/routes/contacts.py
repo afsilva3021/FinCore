@@ -20,6 +20,7 @@ from fincore.presentation.web import (
     CurrentUser,
     _current_user,
     _form_data,
+    _query,
     _redirect,
     _render_counterparties,
     _response,
@@ -60,9 +61,9 @@ def register_counterparty_routes(app: object) -> None:
         current = await _current_user(request)
         if current is None:
             return _redirect("/login")
-        role = role_override or request.query_params.get("role", "all")
-        status = request.query_params.get("status", "all")
-        message = request.query_params.get("message", "")
+        role = role_override or _query(request).get("role", "all")
+        status = _query(request).get("status", "all")
+        message = _query(request).get("message", "")
         return await render(
             request,
             current[0],
@@ -89,7 +90,7 @@ def register_counterparty_routes(app: object) -> None:
         if await _current_user(request) is None:
             return _redirect("/login")
         try:
-            result = await lookup_cep(request.query_params.get("cep", ""))
+            result = await lookup_cep(_query(request).get("cep", ""))
             return Response(
                 status_code=200,
                 headers={"Content-Type": "application/json; charset=utf-8"},
@@ -136,8 +137,8 @@ def register_counterparty_routes(app: object) -> None:
             request,
             current[0],
             await current[1].organization,
-            role=request.query_params.get("role", "all"),
-            status=request.query_params.get("status", "all"),
+            role=_query(request).get("role", "all"),
+            status=_query(request).get("status", "all"),
             form=form,
             editing=True,
         )

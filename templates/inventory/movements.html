@@ -1,0 +1,35 @@
+{% extends "finance/layout.html" %}
+{% block title %}Movimentações de estoque · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">ESTOQUE · MOVIMENTAÇÕES</span><h1>Movimentações de estoque</h1><p>Histórico de entradas, saídas, transferências e estornos, do mais recente para o mais antigo.</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/stock">Ver posição</a></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Movimentos</h3><p>Movimentos gravados não são alterados. Só o último movimento de cada produto em um depósito pode ser estornado.</p></div><span class="step-count">{{ movements|length }} nesta página</span></div>
+  <form method="get" action="/stock/movements" class="title-filters mb-3">
+    <div class="title-search-field"><label class="form-label" for="movement-product">Produto</label><select class="form-select" id="movement-product" name="product"><option value="">Todos</option>{% for product in products %}<option value="{{ product.id }}" {% if product_filter == product.id|string %}selected{% endif %}>{{ product.name }} ({{ product.sku }})</option>{% endfor %}</select></div>
+    <div><label class="form-label" for="movement-warehouse">Depósito</label><select class="form-select" id="movement-warehouse" name="warehouse"><option value="">Todos</option>{% for warehouse in warehouses %}<option value="{{ warehouse.id }}" {% if warehouse_filter == warehouse.id|string %}selected{% endif %}>{{ warehouse.name }}</option>{% endfor %}</select></div>
+    <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/stock/movements">Limpar</a></div>
+  </form>
+  {% if movements %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Data</th><th>Produto</th><th>Depósito</th><th>Tipo</th><th class="text-end">Quantidade</th><th class="text-end">Custo unitário</th><th class="text-end">Valor</th><th class="text-end">Saldo após</th><th>Ações</th></tr></thead><tbody>
+    {% for item in movements %}
+    <tr><td>{{ item.occurred_on.strftime('%d/%m/%Y') }}<small class="d-block text-secondary">{{ item.created_by.full_name }}</small></td>
+      <td><strong>{{ item.product.name }}</strong><small class="d-block text-secondary">{{ item.product.sku }}</small></td>
+      <td>{{ item.warehouse.name }}</td>
+      <td><span class="type-pill {{ 'type-income' if item.direction == 'in' else 'type-expense' }}">{{ reason_label(item.direction, item.reason) }}</span>{% if item.id in reversed_ids %}<small class="d-block text-secondary">Estornado</small>{% endif %}{% if item.notes %}<small class="d-block text-secondary">{{ item.notes }}</small>{% endif %}</td>
+      <td class="text-end text-nowrap {{ 'amount-income' if item.direction == 'in' else 'amount-expense' }}">{{ '+' if item.direction == 'in' else '−' }}{{ item.quantity|quantity }} {{ item.product.unit.code }}</td>
+      <td class="text-end text-nowrap">R$ {{ item.unit_cost|unit_cost }}</td>
+      <td class="text-end text-nowrap">R$ {{ item.total_cost|brl }}</td>
+      <td class="text-end text-nowrap">{{ item.balance_quantity|quantity }} {{ item.product.unit.code }}<small class="d-block text-secondary">R$ {{ item.balance_value|brl }}</small></td>
+      <td>{% if item.id in reversible_ids %}<form method="post" action="/stock/movements/{{ item.id }}/reverse" data-confirm="{{ 'Estornar a transferência inteira (origem e destino)?' if item.transfer_id else 'Criar um movimento oposto para estornar este?' }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-danger" type="submit">Estornar</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>⇄</span><strong>Nenhuma movimentação encontrada</strong><small>{% if product_filter or warehouse_filter %}Nenhum movimento corresponde aos filtros.{% else %}As movimentações registradas em Estoque aparecem aqui.{% endif %}</small></div>{% endif %}
+</article>
+{% endblock %}

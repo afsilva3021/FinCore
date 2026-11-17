@@ -16,9 +16,11 @@
         <a class="nav-link {% if active == 'customers' %}active{% endif %}" href="/customers"><span>♙</span> Clientes</a>
         <a class="nav-link {% if active == 'suppliers' %}active{% endif %}" href="/suppliers"><span>▣</span> Fornecedores</a>
       </div>
-      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-products"><span>PRODUTOS</span><i aria-hidden="true">⌄</i></button>
+      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-products"><span>PRODUTOS E ESTOQUE</span><i aria-hidden="true">⌄</i></button>
       <div class="nav-group" id="nav-products" hidden>
         <a class="nav-link {% if active == 'products' %}active{% endif %}" href="/products"><span>▩</span> Produtos</a>
+        <a class="nav-link {% if active == 'stock' %}active{% endif %}" href="/stock"><span>▤</span> Estoque</a>
+        <a class="nav-link {% if active == 'stock-movements' %}active{% endif %}" href="/stock/movements"><span>⇅</span> Movimentações</a>
         <a class="nav-link {% if active == 'product-settings' %}active{% endif %}" href="/product-settings"><span>☰</span> Grupos e depósitos</a>
       </div>
       <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-management"><span>GESTÃO</span><i aria-hidden="true">⌄</i></button>

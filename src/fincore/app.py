@@ -16,6 +16,7 @@ from fincore.presentation.routes import (
     register_counterparty_routes,
     register_demo_integration_routes,
     register_finance_routes,
+    register_inventory_routes,
     register_member_routes,
     register_product_routes,
     register_reconciliation_routes,
@@ -74,6 +75,7 @@ register_web_routes(app)
 register_counterparty_routes(app)
 register_member_routes(app)
 register_product_routes(app)
+register_inventory_routes(app)
 register_finance_routes(app)
 register_accounting_routes(app)
 register_reconciliation_routes(app)

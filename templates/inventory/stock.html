@@ -1,0 +1,67 @@
+{% extends "finance/layout.html" %}
+{% block title %}Estoque · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">ESTOQUE · POSIÇÃO</span><h1>Estoque</h1><p>Quantidade e valor de cada produto por depósito, ao custo médio.</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/stock/movements">Ver movimentações</a><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="stock-drawer" aria-expanded="false">＋ Nova movimentação</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<section class="title-summary" aria-label="Resumo do estoque">
+  <article class="title-summary-card"><span>Valor em estoque</span><strong>R$ {{ total_value|brl }}</strong><small>ao custo médio</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Posições com saldo</span><strong>{{ positions }}</strong><small>produto por depósito</small></article>
+  <article class="title-summary-card {{ 'title-summary-alert' if low_stock else 'title-summary-neutral' }}"><span>Abaixo do mínimo</span><strong>{{ low_stock|length }}</strong><small>produto(s) para repor</small></article>
+</section>
+{% if low_stock %}
+<article class="panel-card transactions-table-card mb-3">
+  <div class="panel-heading"><div><h3>Produtos abaixo do estoque mínimo</h3><p>Soma de todos os depósitos comparada ao mínimo do cadastro.</p></div></div>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Produto</th><th class="text-end">Em estoque</th><th class="text-end">Mínimo</th><th class="text-end">Faltam</th></tr></thead><tbody>
+    {% for product, on_hand in low_stock %}
+    <tr><td><strong>{{ product.name }}</strong><small class="d-block text-secondary">{{ product.sku }}</small></td><td class="text-end">{{ on_hand|quantity }} {{ product.unit.code }}</td><td class="text-end">{{ product.min_stock|quantity }} {{ product.unit.code }}</td><td class="text-end amount-expense">{{ (product.min_stock - on_hand)|quantity }} {{ product.unit.code }}</td></tr>
+    {% endfor %}
+  </tbody></table></div>
+</article>
+{% endif %}
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Posição por depósito</h3><p>O saldo é a soma dos movimentos; não pode ser editado diretamente.</p></div><span class="step-count">{{ rows|length }} nesta página</span></div>
+  <form method="get" action="/stock" class="title-filters mb-3">
+    <div class="title-search-field"><label class="form-label" for="stock-search">Buscar</label><input class="form-control" id="stock-search" name="q" maxlength="80" value="{{ search }}" placeholder="Código, descrição ou código de barras"></div>
+    <div><label class="form-label" for="stock-warehouse-filter">Depósito</label><select class="form-select" id="stock-warehouse-filter" name="warehouse"><option value="">Todos</option>{% for warehouse in warehouses %}<option value="{{ warehouse.id }}" {% if warehouse_filter == warehouse.id|string %}selected{% endif %}>{{ warehouse.name }}</option>{% endfor %}</select></div>
+    <div><label class="form-label" for="stock-in-stock">Saldo</label><select class="form-select" id="stock-in-stock" name="in_stock"><option value="">Todas as posições</option><option value="1" {% if only_in_stock %}selected{% endif %}>Só com saldo</option></select></div>
+    <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/stock">Limpar</a></div>
+  </form>
+  {% if rows %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Produto</th><th>Depósito</th><th class="text-end">Quantidade</th><th class="text-end">Custo médio</th><th class="text-end">Valor</th><th>Ações</th></tr></thead><tbody>
+    {% for balance, average in rows %}
+    <tr><td><strong>{{ balance.product.name }}</strong><small class="d-block text-secondary">{{ balance.product.sku }}</small></td>
+      <td>{{ balance.warehouse.name }}</td>
+      <td class="text-end">{{ balance.quantity|quantity }} {{ balance.product.unit.code }}</td>
+      <td class="text-end">{% if balance.quantity > 0 %}R$ {{ average|unit_cost }}{% else %}—{% endif %}</td>
+      <td class="text-end">R$ {{ balance.total_value|brl }}</td>
+      <td><a class="btn btn-sm btn-outline-primary" href="/stock/movements?product={{ balance.product_id }}&warehouse={{ balance.warehouse_id }}">Movimentos</a></td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>▤</span><strong>Nenhuma posição de estoque</strong><small>{% if search or warehouse_filter or only_in_stock %}Nenhuma posição corresponde aos filtros.{% else %}Registre o saldo inicial dos produtos para começar.{% endif %}</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="stock-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="stock-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">ESTOQUE</span><h2 id="stock-drawer-title">Nova movimentação</h2><p>Depois de gravado, o movimento não é alterado; a correção é por estorno ou ajuste.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/stock/movements" class="movement-drawer-form" data-movement-form>
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="operation_key" value="{{ form.get('operation_key','') }}">
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="stock-kind">Tipo</label><select class="form-select" id="stock-kind" name="kind" data-stock-kind>{% for key, label in kinds.items() %}<option value="{{ key }}" {% if form.get('kind') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div><label class="form-label" for="stock-product">Produto</label><select class="form-select" id="stock-product" name="product_id" required><option value="">Selecione</option>{% for product in products %}<option value="{{ product.id }}" {% if form.get('product_id') == product.id|string %}selected{% endif %}>{{ product.name }} ({{ product.sku }}) — {{ product.unit.code }}</option>{% endfor %}</select>{% if not products %}<small class="form-text">Cadastre um produto com controle de estoque em <a href="/products">Produtos</a>.</small>{% endif %}</div>
+      <div><label class="form-label" for="stock-warehouse"><span data-stock-for="opening entry exit">Depósito</span><span data-stock-for="transfer">Depósito de origem</span></label><select class="form-select" id="stock-warehouse" name="warehouse_id" required>{% for warehouse in active_warehouses %}<option value="{{ warehouse.id }}" {% if form.get('warehouse_id') == warehouse.id|string %}selected{% endif %}>{{ warehouse.name }}</option>{% endfor %}</select></div>
+      <div data-stock-for="transfer"><label class="form-label" for="stock-destination">Depósito de destino</label><select class="form-select" id="stock-destination" name="destination_warehouse_id"><option value="">Selecione</option>{% for warehouse in active_warehouses %}<option value="{{ warehouse.id }}" {% if form.get('destination_warehouse_id') == warehouse.id|string %}selected{% endif %}>{{ warehouse.name }}</option>{% endfor %}</select></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="stock-quantity">Quantidade</label><input class="form-control" id="stock-quantity" name="quantity" inputmode="decimal" maxlength="20" value="{{ form.get('quantity','') }}" required placeholder="0"></div><div data-stock-for="opening entry"><label class="form-label" for="stock-unit-cost">Custo unitário (R$)</label><input class="form-control" id="stock-unit-cost" name="unit_cost" inputmode="decimal" maxlength="20" value="{{ form.get('unit_cost','') }}" placeholder="0,00"></div></div>
+      <div><small class="form-text" data-stock-for="opening">Entra no estoque e na contabilidade como patrimônio de abertura.</small><small class="form-text" data-stock-for="entry">Entra pelo custo informado e recalcula o custo médio.</small><small class="form-text" data-stock-for="exit">Sai pelo custo médio atual e é lançada como perda de estoque.</small><small class="form-text" data-stock-for="transfer">Sai da origem e entra no destino pelo mesmo valor; não gera lançamento contábil.</small></div>
+      <div><label class="form-label" for="stock-date">Data</label><input class="form-control" id="stock-date" name="occurred_on" type="date" max="{{ today }}" value="{{ form.get('occurred_on', today) }}" required></div>
+      <div><label class="form-label" for="stock-notes">Observações <small class="text-secondary fw-normal">(opcional)</small></label><input class="form-control" id="stock-notes" name="notes" maxlength="240" value="{{ form.get('notes','') }}"></div>
+    </div>
+    <div class="movement-drawer-footer"><span>Saídas e transferências são recusadas quando não há saldo suficiente.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Registrar</button></div></div>
+  </form>
+</aside>
+{% endblock %}

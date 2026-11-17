@@ -1,6 +1,6 @@
 # FinCore
 
-FinCore é um ERP para comércio em construção, em português (pt-BR): o núcleo financeiro e contábil está completo e os módulos de produtos, estoque, compras, vendas, CRM e fiscal simulado entram por fases ([roteiro](docs/erp-roadmap.md)). Hoje, além do financeiro, existem os cadastros de produto. A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
+FinCore é um ERP para comércio em construção, em português (pt-BR): o núcleo financeiro e contábil está completo e os módulos de produtos, estoque, compras, vendas, CRM e fiscal simulado entram por fases ([roteiro](docs/erp-roadmap.md)). Hoje, além do financeiro, existem os cadastros de produto e o controle de estoque. A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
 
 Este README serve como visão de produto e guia reproduzível para desenvolvedores e agentes de código. Leia também [AGENTS.md](AGENTS.md), que define invariantes e o fluxo obrigatório de implementação, e `docs/`, que contém contratos e decisões detalhados.
 
@@ -15,6 +15,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - **Segurança:** Argon2id, limite de tentativas de login, logout que revoga a sessão, CSRF, CSP sem scripts inline e banco acessível só por um usuário sem permissão de DDL.
 - **Sugestão de categoria por aprendizado:** um classificador Naive Bayes aprende com os lançamentos da própria organização e sugere a categoria pela descrição, sem serviço externo.
 - **Cadastros de produto:** produtos com SKU, código de barras validado (GTIN), grupos hierárquicos, unidades de medida com casas decimais próprias e depósitos, com um perfil de acesso só para essa área.
+- **Estoque que fecha no centavo:** movimentos imutáveis (também no banco), custo médio ponderado, saldo derivado dos movimentos, bloqueio contra venda simultânea do último item e lançamento contábil automático dos ajustes.
 - **Arquitetura verificada:** regras financeiras puras em `domain/` e testes que falham se a apresentação consultar o banco direto.
 
 <details>
@@ -28,8 +29,10 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 | Plano de contas e diário contábil | Membros e perfis de acesso |
 | ![Tema escuro](docs/screenshots/07-dashboard-tema-escuro.png) | ![Celular, perfil somente leitura](docs/screenshots/08-celular-somente-leitura.png) |
 | Tema escuro | Celular, perfil somente leitura |
-| ![Cadastro de produtos](docs/screenshots/09-produtos.png) | |
-| Cadastro de produtos (ERP, fase 8) | |
+| ![Cadastro de produtos](docs/screenshots/09-produtos.png) | ![Posição de estoque](docs/screenshots/10-estoque.png) |
+| Cadastro de produtos (ERP, fase 8) | Posição de estoque ao custo médio (ERP, fase 9) |
+| ![Movimentações de estoque](docs/screenshots/11-movimentacoes-estoque.png) | |
+| Histórico de movimentações com estorno | |
 
 As telas usam a organização fictícia criada por `fincore-seed-demo`.
 </details>
@@ -44,8 +47,8 @@ O Robyn é um framework web Python com servidor em Rust, assíncrono e com pouca
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0019`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
-- Transformação em ERP em andamento: fase 8 (cadastros de produto) concluída; estoque, compras, vendas, CRM e fiscal simulado ainda **não** existem. Situação por fase em [docs/erp-roadmap.md](docs/erp-roadmap.md).
+- Migrations versionadas até `0020`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- Transformação em ERP em andamento: fases 8 (cadastros de produto) e 9 (estoque) concluídas; compras, vendas, CRM e fiscal simulado ainda **não** existem, então o estoque só é movimentado manualmente. Situação por fase em [docs/erp-roadmap.md](docs/erp-roadmap.md).
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
@@ -57,6 +60,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-17 | ERP fase 9: estoque — saldo inicial, ajustes, transferências entre depósitos e estorno em `/stock` e `/stock/movements`, custo médio ponderado, lançamento contábil dos ajustes e API `/api/v1/stock`. Migration `0020`. Correção: parâmetros da URL passam a ser decodificados (mensagens apareciam como `Contato+cadastrado.` e buscas com acento ou espaço não encontravam nada no servidor real). |
 | 2026-11-17 | `render.yaml` para publicar uma demonstração online no plano gratuito do Render (aplicação + PostgreSQL, com dados fictícios); instruções na Opção C da instalação. |
 | 2026-11-17 | Início da transformação em ERP ([roteiro](docs/erp-roadmap.md)). Fase 8: cadastros de produto — produtos, grupos, unidades de medida e depósitos em `/products` e `/product-settings`, API `/api/v1/products`, perfil **Estoque** e permissão de escrita por área. Migration `0019`. Correção: marcadores de conflito de merge removidos de `docs/progress.md`. |
 | 2026-11-06 | Sugestão de categoria por aprendizado com o histórico (Naive Bayes, sem serviço externo), comando `fincore-seed-demo`, screenshots no README e ações de escrita escondidas para o perfil somente leitura. Correção: o painel "Saldos por conta" da visão geral sempre dizia "Nenhuma conta cadastrada" (a rota não enviava os saldos ao template); o perfil exibia "Administrador" fixo. |
@@ -119,10 +123,10 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
   |---|---|
   | Proprietário | Tudo, inclusive adicionar membros, mudar perfis e desativar acessos |
   | Financeiro | Cadastrar e alterar dados financeiros e contábeis; só consulta produtos; não gerencia membros |
-  | Estoque | Cadastrar e alterar produtos, grupos, unidades e depósitos; só consulta o financeiro |
+  | Estoque | Cadastrar produtos, grupos, unidades e depósitos e movimentar o estoque; só consulta o financeiro |
   | Somente leitura | Consultar telas e relatórios; nenhuma alteração |
 
-  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. Cada rota pertence a uma área de escrita (cadastros de produto ou financeiro) e cada perfil altera só as suas áreas; uma rota ainda não classificada conta como financeira. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
+  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. Cada rota pertence a uma área de escrita (cadastros de produto, estoque ou financeiro) e cada perfil altera só as suas áreas; uma rota ainda não classificada conta como financeira. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
 - Cadastro próprio de clientes e fornecedores em `/customers` e `/suppliers`, com CPF/CNPJ, endereço, contato, inativação e reativação.
 - Consulta de endereço por CEP via ViaCEP, acionada pelo formulário de contato; os campos também podem ser preenchidos manualmente.
 
@@ -173,11 +177,24 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
 - Código de barras é validado como GTIN-8/12/13/14 pelo dígito verificador e é único por organização quando informado. O NCM guarda só o formato de 8 dígitos; não é conferido na tabela oficial.
 - Grupos, unidades e depósitos em `/product-settings`. Grupos são hierárquicos e não aceitam ciclos. Cada unidade define quantas casas decimais a quantidade aceita (0 para peças, 3 para quilos), e quantidades fora dessa precisão são recusadas em vez de arredondadas.
 - Toda organização tem exatamente um depósito padrão, garantido também por índice no banco. Organizações novas e as que já existiam recebem o depósito `PRINCIPAL` e as unidades UN, CX, KG, L e M.
-- **Ainda não há estoque:** o cadastro não guarda saldo nem custo. Movimentações, saldo e custo médio chegam na fase 9.
+- O cadastro não guarda saldo nem custo: a coluna "Em estoque" da lista vem do módulo de estoque.
+- Produto com movimentos de estoque não troca de unidade; produto com saldo não desliga o controle de estoque; depósito com saldo não é inativado.
+
+### Estoque (ERP, fase 9)
+
+- Posição em `/stock`: quantidade, custo médio e valor de cada produto por depósito, valor total do estoque e lista de produtos abaixo do mínimo (somando todos os depósitos).
+- Movimentações manuais: **saldo inicial**, **entrada** (ajuste ou sobra, pelo custo informado), **saída** (perda, quebra ou consumo, pelo custo médio) e **transferência** entre depósitos (leva o mesmo valor; não muda o custo total).
+- **Custo médio ponderado móvel.** A posição guarda quantidade e valor total; a saída que zera a quantidade leva todo o valor, então a soma dos movimentos é sempre igual ao valor da posição.
+- **Movimento é imutável**, inclusive para quem acessa o banco direto (gatilho recusa `UPDATE` e `DELETE`). O estorno cria o movimento oposto e preserva o original. Só o último movimento de um produto em um depósito pode ser estornado; para corrigir um movimento antigo, lance um ajuste.
+- **Sem estoque negativo:** saída ou transferência maior que o saldo é recusada, e a posição é bloqueada durante a operação para que dois envios simultâneos não vendam o mesmo item.
+- Reenvio do formulário ou da requisição com a mesma `operation_key` não movimenta duas vezes.
+- Histórico em `/stock/movements`, com o saldo depois de cada movimento. A ordem é a de registro; a data informada não reordena o custo médio.
+- Ajustes lançam no diário automaticamente (estoque contra patrimônio de abertura, ajustes positivos ou perdas); o saldo da conta contábil de estoque bate com o valor das posições. Regras em [docs/accounting.md](docs/accounting.md).
+- **Ainda não há compras nem vendas:** a entrada por compra e a baixa por venda chegam nas fases 10 e 11.
 
 ### API e demonstrações
 
-- API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias, transações (listar, consultar, criar, liquidar e estornar), títulos (listar, detalhar, cadastrar, baixar e cancelar) e produtos (listar, detalhar e cadastrar), com paginação e isolamento por organização.
+- API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias, transações (listar, consultar, criar, liquidar e estornar), títulos (listar, detalhar, cadastrar, baixar e cancelar), produtos (listar, detalhar e cadastrar) e estoque (posição, movimentos, movimentar e estornar), com paginação e isolamento por organização.
 - `/integrations` permite executar simuladores locais de Pix, boleto, cartão, webhook e Open Finance.
 - Contratos e rotas: [docs/api.md](docs/api.md). Limites de integrações: [docs/external-integrations.md](docs/external-integrations.md).
 
@@ -201,6 +218,8 @@ Os modelos Tortoise estão em `src/fincore/infrastructure/models.py`; migrations
 | `ProductGroup`, `UnitOfMeasure` | Grupo hierárquico de produtos; unidade de medida com sigla e casas decimais das quantidades |
 | `Product` | Produto da organização: SKU e código de barras únicos, grupo, unidade, preço de venda, estoque mínimo e NCM de referência; não guarda saldo |
 | `Warehouse` | Depósito de estoque; exatamente um padrão por organização |
+| `StockMovement` | Movimento de estoque efetivado e imutável: sentido, motivo, quantidade, custo, saldo após o movimento, chave idempotente, par de transferência, estorno e lançamento contábil |
+| `StockBalance` | Posição do produto no depósito (quantidade e valor total); cache derivado dos movimentos, alterado só na transação do movimento |
 
 As regras contábeis, estados e invariantes estão detalhados em [docs/accounting.md](docs/accounting.md), [docs/requirements.md](docs/requirements.md) e [AGENTS.md](AGENTS.md). Não criar um campo de saldo editável como fonte da verdade; derive valores realizados dos movimentos/diário. Datas de competência, vencimento e liquidação representam conceitos diferentes.
 

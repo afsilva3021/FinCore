@@ -17,6 +17,7 @@ from fincore.presentation.web import (
     CurrentUser,
     _csrf_from_auth,
     _page,
+    _query,
     _response,
     login_required,
 )
@@ -24,7 +25,7 @@ from fincore.presentation.web import (
 
 def register_report_routes(app: object) -> None:
     def report_dates(request: Request) -> tuple[date, date]:
-        query = request.query_params
+        query = _query(request)
         today = date.today()
         default_start = today.replace(day=1)
         try:

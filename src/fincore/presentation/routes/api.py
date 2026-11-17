@@ -36,6 +36,7 @@ from fincore.presentation.web import (
     CSRF_TTL_SECONDS,
     CurrentUser,
     _current_user,
+    _query,
     _set_cookie,
     _valid_csrf,
     api_login_required,
@@ -56,8 +57,8 @@ def json_response(data: object, status: int = 200) -> Response:
 
 def pagination(request: Request) -> tuple[int, int]:
     try:
-        limit = int(request.query_params.get("limit", "50"))
-        offset = int(request.query_params.get("offset", "0"))
+        limit = int(_query(request).get("limit", "50"))
+        offset = int(_query(request).get("offset", "0"))
     except ValueError as exc:
         raise ValueError from exc
     if not 1 <= limit <= 100 or offset < 0:
@@ -237,8 +238,8 @@ def register_api_routes(app: object) -> None:
     @api_login_required
     async def api_category_suggestion(request: Request, current: CurrentUser) -> Response:
         """Sugere a categoria pela descrição, aprendendo com os lançamentos da organização."""
-        description = (request.query_params.get("description", "") or "")[:240]
-        transaction_type = request.query_params.get("type", "") or ""
+        description = (_query(request).get("description", "") or "")[:240]
+        transaction_type = _query(request).get("type", "") or ""
         result = await suggest_category(
             await current[1].organization, description, transaction_type
         )
@@ -293,8 +294,8 @@ def register_api_routes(app: object) -> None:
             )
         query = transactions_query(
             await current[1].organization,
-            status=request.query_params.get("status", None),
-            transaction_type=request.query_params.get("type", None),
+            status=_query(request).get("status", None),
+            transaction_type=_query(request).get("type", None),
         )
         total = await query.count()
         movements = await query.offset(offset).limit(limit)

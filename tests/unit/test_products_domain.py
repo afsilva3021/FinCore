@@ -130,3 +130,18 @@ def test_each_profile_writes_only_its_own_area() -> None:
     assert can_write("stock", AREA_CATALOG) and not can_write("stock", AREA_FINANCE)
     assert not can_write("viewer", AREA_FINANCE) and not can_write("viewer", AREA_CATALOG)
     assert not can_write("desconhecido", AREA_CATALOG)
+
+
+def test_query_values_are_decoded_once_for_every_route() -> None:
+    """O servidor real entrega a URL crua; a busca e as mensagens precisam do texto."""
+    from types import SimpleNamespace
+
+    from fincore.presentation.web import _query
+
+    raw = {"q": "p%C3%A3o+de+queijo", "message": "Transfer%C3%AAncia+registrada.", "id": "abc-1"}
+    query = _query(SimpleNamespace(query_params=raw))
+    assert query.get("q") == "pão de queijo"
+    assert query.get("message") == "Transferência registrada."
+    assert query.get("id") == "abc-1"
+    assert query.get("ausente") == "" and query.get("ausente", None) is None
+    assert query.get("ausente", "padrão") == "padrão"

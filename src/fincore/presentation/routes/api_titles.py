@@ -17,7 +17,7 @@ from fincore.presentation.routes.api import (
     pagination,
     require_csrf,
 )
-from fincore.presentation.web import CurrentUser, api_login_required
+from fincore.presentation.web import CurrentUser, _query, api_login_required
 
 
 def title_json(title: FinancialTitle, balance: Decimal) -> dict[str, object]:
@@ -119,8 +119,8 @@ def register_title_api_routes(app: object) -> None:
             return error_response("invalid_pagination", "Paginação inválida.", 400)
         query = titles_api_query(
             await current[1].organization,
-            title_type=request.query_params.get("type", None),
-            status=request.query_params.get("status", None),
+            title_type=_query(request).get("type", None),
+            status=_query(request).get("status", None),
         )
         total = await query.count()
         titles = list(await query.offset(offset).limit(limit))

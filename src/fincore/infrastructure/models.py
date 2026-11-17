@@ -467,3 +467,80 @@ class Product(Model):
 
     class Meta:
         unique_together = (("organization", "sku"),)
+
+
+# --- Estoque (ERP, fase 9) --------------------------------------------------------------
+
+
+class StockBalance(Model):
+    """Posição de um produto em um depósito.
+
+    É um cache: a fonte da verdade são os `StockMovement`. Só é alterado dentro da
+    transação que grava o movimento, com a linha bloqueada.
+    """
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="stock_balances", on_delete=fields.CASCADE
+    )
+    product = fields.ForeignKeyField(
+        "models.Product", related_name="stock_balances", on_delete=fields.RESTRICT
+    )
+    warehouse = fields.ForeignKeyField(
+        "models.Warehouse", related_name="stock_balances", on_delete=fields.RESTRICT
+    )
+    quantity = fields.DecimalField(max_digits=15, decimal_places=4, default=0)
+    # Valor do estoque ao custo médio; custo médio = total_value / quantity.
+    total_value = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    # Quantos movimentos já passaram por esta posição; numera o próximo movimento.
+    movement_count = fields.IntField(default=0)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        unique_together = (("product", "warehouse"),)
+
+
+class StockMovement(Model):
+    """Movimento de estoque efetivado. Imutável: correção só por movimento de estorno."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="stock_movements", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_stock_movements", on_delete=fields.RESTRICT
+    )
+    product = fields.ForeignKeyField(
+        "models.Product", related_name="stock_movements", on_delete=fields.RESTRICT
+    )
+    warehouse = fields.ForeignKeyField(
+        "models.Warehouse", related_name="stock_movements", on_delete=fields.RESTRICT
+    )
+    # Ordem do movimento dentro do par produto/depósito (1, 2, 3...).
+    sequence = fields.IntField()
+    direction = fields.CharField(max_length=3)
+    reason = fields.CharField(max_length=16)
+    quantity = fields.DecimalField(max_digits=15, decimal_places=4)
+    unit_cost = fields.DecimalField(max_digits=15, decimal_places=6)
+    total_cost = fields.DecimalField(max_digits=15, decimal_places=2)
+    # Posição logo depois deste movimento (para o kardex e para auditoria).
+    balance_quantity = fields.DecimalField(max_digits=15, decimal_places=4)
+    balance_value = fields.DecimalField(max_digits=15, decimal_places=2)
+    occurred_on = fields.DateField()
+    notes = fields.CharField(max_length=240, null=True)
+    # Chave de idempotência; numa transferência fica só na perna de saída.
+    operation_key = fields.UUIDField(null=True, unique=True)
+    transfer_id = fields.UUIDField(null=True, db_index=True)
+    reversal_of = fields.OneToOneField(
+        "models.StockMovement", related_name="reversal", null=True, on_delete=fields.RESTRICT
+    )
+    journal_entry = fields.ForeignKeyField(
+        "models.JournalEntry", related_name="stock_movements", null=True, on_delete=fields.RESTRICT
+    )
+    # Documento que originou o movimento (compras e vendas, nas próximas fases).
+    source_type = fields.CharField(max_length=24, null=True)
+    source_id = fields.UUIDField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("product", "warehouse", "sequence"),)

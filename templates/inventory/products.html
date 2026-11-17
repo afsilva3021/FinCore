@@ -8,7 +8,7 @@
 {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
 <article class="panel-card transactions-table-card">
-  <div class="panel-heading"><div><h3>Produtos cadastrados</h3><p>O saldo em estoque passa a aparecer aqui quando o módulo de estoque for ativado.</p></div><span class="step-count">{{ products|length }} nesta página</span></div>
+  <div class="panel-heading"><div><h3>Produtos cadastrados</h3><p>Em estoque soma todos os depósitos; os detalhes ficam em <a href="/stock">Estoque</a>.</p></div><span class="step-count">{{ products|length }} nesta página</span></div>
   <form method="get" action="/products" class="title-filters mb-3">
     <div class="title-search-field"><label class="form-label" for="product-search">Buscar</label><input class="form-control" id="product-search" name="q" maxlength="80" value="{{ search }}" placeholder="Código, descrição ou código de barras"></div>
     <div><label class="form-label" for="product-status">Situação</label><select class="form-select" id="product-status" name="status"><option value="all" {% if status == 'all' %}selected{% endif %}>Todas</option><option value="active" {% if status == 'active' %}selected{% endif %}>Ativos</option><option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inativos</option></select></div>
@@ -16,12 +16,13 @@
     <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/products">Limpar</a></div>
   </form>
   {% if products %}
-  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Produto</th><th>Grupo</th><th>Unidade</th><th class="text-end">Preço de venda</th><th class="text-end">Estoque mínimo</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Produto</th><th>Grupo</th><th>Unidade</th><th class="text-end">Preço de venda</th><th class="text-end">Em estoque</th><th class="text-end">Estoque mínimo</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
     {% for product in products %}
     <tr><td><strong>{{ product.name }}</strong><small class="d-block text-secondary">{{ product.sku }}{% if product.barcode %} · EAN {{ product.barcode }}{% endif %}</small></td>
       <td>{{ product.group.name if product.group else '—' }}</td>
       <td>{{ product.unit.code }}</td>
       <td class="text-end">R$ {{ product.sale_price|brl }}</td>
+      <td class="text-end">{% if product.tracks_stock %}{% set stock = on_hand.get(product.id, 0) %}<span class="{{ 'amount-expense' if stock < product.min_stock else '' }}">{{ stock|quantity }}</span>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
       <td class="text-end">{% if product.tracks_stock %}{{ product.min_stock|quantity }}{% else %}<span class="text-secondary">Não controla</span>{% endif %}</td>
       <td><span class="badge {{ 'text-bg-success' if product.is_active else 'text-bg-secondary' }}">{{ 'Ativo' if product.is_active else 'Inativo' }}</span></td>
       <td><div class="d-flex gap-2"><a class="btn btn-sm btn-outline-primary" href="/products/{{ product.id }}/edit">Editar</a><form method="post" action="/products/{{ product.id }}/active"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="filter_q" value="{{ search }}"><input type="hidden" name="filter_status" value="{{ status }}"><input type="hidden" name="filter_group" value="{{ group_filter }}"><input type="hidden" name="is_active" value="{{ 'false' if product.is_active else 'true' }}"><button class="btn btn-sm {{ 'btn-outline-secondary' if product.is_active else 'btn-outline-success' }}" type="submit">{{ 'Inativar' if product.is_active else 'Reativar' }}</button></form></div></td>

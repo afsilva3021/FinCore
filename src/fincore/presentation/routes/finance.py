@@ -33,6 +33,7 @@ from fincore.presentation.web import (
     _form_data,
     _form_date,
     _form_uuid,
+    _query,
     _redirect,
     _render_accounts,
     _render_categories,
@@ -221,7 +222,7 @@ def register_finance_routes(app: object) -> None:
     @app.get("/transactions")
     @login_required
     async def transactions_page(request: Request, current: CurrentUser) -> Response:
-        default_type = request.query_params.get("type", "income")
+        default_type = _query(request).get("type", "income")
         if default_type not in {"income", "expense", "transfer"}:
             default_type = "income"
         return _response(

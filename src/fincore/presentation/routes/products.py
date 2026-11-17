@@ -22,6 +22,7 @@ from fincore.application.queries import (
     get_product,
     product_groups,
     products_query,
+    stock_on_hand,
     units_of_measure,
     warehouses,
 )
@@ -43,6 +44,7 @@ from fincore.presentation.web import (
     _format_quantity,
     _page,
     _paginate,
+    _query,
     _redirect,
     _response,
     _valid_csrf,
@@ -125,7 +127,7 @@ def register_product_routes(app: object) -> None:
         editing: bool = False,
         filters: dict[str, str] | None = None,
     ) -> Response:
-        source = filters if filters is not None else request.query_params
+        source = filters if filters is not None else _query(request)
         search = (source.get("q", "") or "").strip()
         status = source.get("status", "all") or "all"
         status = status if status in STATUSES else "all"
@@ -152,6 +154,7 @@ def register_product_routes(app: object) -> None:
             organization=organization,
             csrf=_csrf_from_auth(request),
             products=products,
+            on_hand=await stock_on_hand(organization, [item.id for item in products]),
             pagination=page_info,
             units=units,
             groups=groups,
@@ -162,7 +165,7 @@ def register_product_routes(app: object) -> None:
             editing=editing,
             open_drawer=editing or error is not None,
             error=error,
-            message=request.query_params.get("message", ""),
+            message=_query(request).get("message", ""),
             active="products",
             section="Produtos",
         )
@@ -289,7 +292,7 @@ def register_product_routes(app: object) -> None:
             error=error,
             failed=failed,
             form=form or {},
-            message=request.query_params.get("message", ""),
+            message=_query(request).get("message", ""),
             active="product-settings",
             section="Grupos, unidades e depósitos",
         )
@@ -441,12 +444,12 @@ def register_product_routes(app: object) -> None:
             limit, offset = pagination(request)
         except ValueError:
             return error_response("invalid_pagination", "Paginação inválida.", 400)
-        status = request.query_params.get("status", "all") or "all"
+        status = _query(request).get("status", "all") or "all"
         if status not in STATUSES:
             return error_response("invalid_filter", "status deve ser all, active ou inactive.", 400)
         query = products_query(
             await current[1].organization,
-            search=request.query_params.get("q", "") or "",
+            search=_query(request).get("q", "") or "",
             status=status,
         )
         total = await query.count()

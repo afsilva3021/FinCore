@@ -7,6 +7,7 @@ from fincore.presentation.routes.auth import register_web_routes
 from fincore.presentation.routes.contacts import register_counterparty_routes
 from fincore.presentation.routes.finance import register_finance_routes
 from fincore.presentation.routes.integrations import register_demo_integration_routes
+from fincore.presentation.routes.inventory import register_inventory_routes
 from fincore.presentation.routes.members import register_member_routes
 from fincore.presentation.routes.products import register_product_routes
 from fincore.presentation.routes.reconciliation import register_reconciliation_routes
@@ -24,4 +25,5 @@ __all__ = [
     "register_counterparty_routes",
     "register_member_routes",
     "register_product_routes",
+    "register_inventory_routes",
 ]

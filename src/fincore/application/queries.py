@@ -6,9 +6,11 @@ executada para que a apresentação possa paginá-la.
 """
 
 from collections.abc import Iterable
+from decimal import Decimal
 from uuid import UUID
 
 from tortoise.expressions import Q
+from tortoise.functions import Count, Sum
 from tortoise.queryset import QuerySet
 
 from fincore.infrastructure.models import (
@@ -24,6 +26,8 @@ from fincore.infrastructure.models import (
     Product,
     ProductGroup,
     ReconciliationMatch,
+    StockBalance,
+    StockMovement,
     TitleSettlement,
     UnitOfMeasure,
     User,
@@ -308,3 +312,167 @@ async def warehouses(organization: Organization, *, only_active: bool = False) -
     if only_active:
         query = query.filter(is_active=True)
     return await query.order_by("-is_default", "name")
+
+
+# --- Estoque --------------------------------------------------------------------------
+
+
+def stock_balances_query(
+    organization: Organization,
+    *,
+    search: str = "",
+    warehouse_id: UUID | None = None,
+    product_id: UUID | None = None,
+    only_in_stock: bool = False,
+) -> QuerySet[StockBalance]:
+    """Posições de estoque (produto x depósito) que já tiveram movimento."""
+    query = StockBalance.filter(organization=organization, movement_count__gt=0)
+    term = search.strip()
+    if term:
+        query = query.filter(
+            Q(product__sku__icontains=term)
+            | Q(product__name__icontains=term)
+            | Q(product__barcode__icontains=term)
+        )
+    if warehouse_id is not None:
+        query = query.filter(warehouse_id=warehouse_id)
+    if product_id is not None:
+        query = query.filter(product_id=product_id)
+    if only_in_stock:
+        query = query.filter(quantity__gt=0)
+    return query.select_related("product__unit", "warehouse").order_by(
+        "product__name", "product__sku", "warehouse__name"
+    )
+
+
+async def stock_totals(organization: Organization) -> tuple[Decimal, int]:
+    """Valor total do estoque ao custo médio e quantas posições têm saldo."""
+    rows = (
+        await StockBalance.filter(organization=organization, quantity__gt=0)
+        .annotate(value_sum=Sum("total_value"), positions=Count("id"))
+        .values("value_sum", "positions")
+    )
+    if not rows:
+        return Decimal("0.00"), 0
+    return rows[0]["value_sum"] or Decimal("0.00"), rows[0]["positions"] or 0
+
+
+async def stock_on_hand(
+    organization: Organization, product_ids: Iterable[UUID] | None = None
+) -> dict[UUID, Decimal]:
+    """Quantidade em estoque por produto, somando todos os depósitos (uma consulta)."""
+    query = StockBalance.filter(organization=organization)
+    if product_ids is not None:
+        ids = list(product_ids)
+        if not ids:
+            return {}
+        query = query.filter(product_id__in=ids)
+    rows = (
+        await query.group_by("product_id")
+        .annotate(on_hand=Sum("quantity"))
+        .values("product_id", "on_hand")
+    )
+    return {row["product_id"]: row["on_hand"] or Decimal("0") for row in rows}
+
+
+async def low_stock_products(organization: Organization) -> list[tuple[Product, Decimal]]:
+    """Produtos ativos com estoque mínimo definido e saldo total abaixo dele."""
+    products = (
+        await Product.filter(
+            organization=organization, is_active=True, tracks_stock=True, min_stock__gt=0
+        )
+        .select_related("unit")
+        .order_by("name")
+    )
+    on_hand = await stock_on_hand(organization, [product.id for product in products])
+    return [
+        (product, on_hand.get(product.id, Decimal("0")))
+        for product in products
+        if on_hand.get(product.id, Decimal("0")) < product.min_stock
+    ]
+
+
+async def stock_products(organization: Organization) -> list[Product]:
+    """Produtos que podem receber movimentação manual."""
+    return (
+        await Product.filter(organization=organization, is_active=True, tracks_stock=True)
+        .select_related("unit")
+        .order_by("name", "sku")
+    )
+
+
+def stock_movements_query(
+    organization: Organization,
+    *,
+    product_id: UUID | None = None,
+    warehouse_id: UUID | None = None,
+) -> QuerySet[StockMovement]:
+    query = StockMovement.filter(organization=organization)
+    if product_id is not None:
+        query = query.filter(product_id=product_id)
+    if warehouse_id is not None:
+        query = query.filter(warehouse_id=warehouse_id)
+    return query.select_related("product__unit", "warehouse", "created_by").order_by(
+        "-created_at", "-sequence"
+    )
+
+
+async def get_stock_movement(organization: Organization, movement_id: UUID) -> StockMovement | None:
+    return (
+        await StockMovement.filter(id=movement_id, organization=organization)
+        .select_related("product__unit", "warehouse")
+        .first()
+    )
+
+
+async def stock_movement_flags(
+    organization: Organization, movements: Iterable[StockMovement]
+) -> tuple[set[UUID], set[UUID]]:
+    """IDs já estornados e IDs que ainda podem ser estornados, entre os movimentos dados.
+
+    Pode ser estornado o último movimento da posição que não é estorno nem foi estornado;
+    numa transferência, as duas pernas precisam ser as últimas das suas posições.
+    """
+    items = list(movements)
+    if not items:
+        return set(), set()
+    reversed_ids = set(
+        await StockMovement.filter(reversal_of_id__in=[item.id for item in items]).values_list(
+            "reversal_of_id", flat=True
+        )
+    )
+    balances = await StockBalance.filter(
+        organization=organization,
+        product_id__in={item.product_id for item in items},
+        warehouse_id__in={item.warehouse_id for item in items},
+    )
+    last = {(row.product_id, row.warehouse_id): row.movement_count for row in balances}
+
+    def is_last(item: StockMovement) -> bool:
+        return last.get((item.product_id, item.warehouse_id)) == item.sequence
+
+    transfer_ids = {item.transfer_id for item in items if item.transfer_id and is_last(item)}
+    legs = (
+        await StockMovement.filter(organization=organization, transfer_id__in=transfer_ids)
+        if transfer_ids
+        else []
+    )
+    if legs:
+        leg_balances = await StockBalance.filter(
+            organization=organization,
+            product_id__in={leg.product_id for leg in legs},
+            warehouse_id__in={leg.warehouse_id for leg in legs},
+        )
+        last.update(
+            {(row.product_id, row.warehouse_id): row.movement_count for row in leg_balances}
+        )
+    blocked_transfers = {leg.transfer_id for leg in legs if not is_last(leg)}
+    reversible = {
+        item.id
+        for item in items
+        if item.reason != "reversal"
+        and item.id not in reversed_ids
+        and is_last(item)
+        and item.transfer_id not in blocked_transfers
+    }
+    return reversed_ids, reversible

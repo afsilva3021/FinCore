@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal
 from http.cookies import SimpleCookie
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, unquote_plus, urlencode
 from uuid import UUID, uuid4
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -31,6 +31,7 @@ from fincore.application.identity import (
 from fincore.application.members import (
     AREA_CATALOG,
     AREA_FINANCE,
+    AREA_INVENTORY,
     ROLE_DESCRIPTIONS,
     ROLE_LABELS,
     can_manage_members,
@@ -91,15 +92,21 @@ WRITE_EXEMPT_PATHS = frozenset({"/login", "/register", "/logout"})
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
-# Prefixos de rota da área de cadastros de produto; todo o resto é a área financeira.
-CATALOG_PATH_PREFIXES = ("/products", "/product-settings", "/api/v1/products")
+# Prefixos de rota de cada área de escrita; todo o resto é a área financeira.
+AREA_PATH_PREFIXES = {
+    "/products": AREA_CATALOG,
+    "/product-settings": AREA_CATALOG,
+    "/api/v1/products": AREA_CATALOG,
+    "/stock": AREA_INVENTORY,
+    "/api/v1/stock": AREA_INVENTORY,
+}
 
 
 def write_area(path: str) -> str:
     """Área de escrita a que uma rota pertence (define quais perfis podem alterá-la)."""
-    for prefix in CATALOG_PATH_PREFIXES:
+    for prefix, area in AREA_PATH_PREFIXES.items():
         if path == prefix or path.startswith(prefix + "/"):
-            return AREA_CATALOG
+            return area
     return AREA_FINANCE
 
 
@@ -161,6 +168,14 @@ def _format_quantity(value: Decimal) -> str:
     return whole.replace(",", ".") + ("," + fraction if fraction else "")
 
 
+def _format_unit_cost(value: Decimal) -> str:
+    """Custo unitário pt-BR com 2 a 6 casas: 6.000000 -> "6,00", 3.333333 -> "3,333333"."""
+    whole, _, fraction = f"{value:,.6f}".partition(".")
+    fraction = fraction.rstrip("0").ljust(2, "0")
+    return whole.replace(",", ".") + "," + fraction
+
+
+template_env.filters["unit_cost"] = _format_unit_cost
 template_env.filters["brl"] = _format_brl
 template_env.filters["quantity"] = _format_quantity
 
@@ -305,7 +320,7 @@ class PageInfo:
 
 def _page_number(request: Request) -> int:
     try:
-        number = int(request.query_params.get("page", "1") or "1")
+        number = int(_query(request).get("page", "1") or "1")
     except ValueError:
         return 1
     return min(max(number, 1), MAX_PAGE)
@@ -315,9 +330,31 @@ async def _paginate(query, request: Request, *, keep: tuple[str, ...] = (), size
     """Busca uma página (size + 1 linhas para saber se há próxima) e os links de navegação."""
     number = _page_number(request)
     rows = list(await query.offset((number - 1) * size).limit(size + 1))
-    params = {key: value for key in keep if (value := request.query_params.get(key, ""))}
+    params = {key: value for key in keep if (value := _query(request).get(key, ""))}
     info = PageInfo(number, number > 1, len(rows) > size, params)
     return rows[:size], info
+
+
+class _Query:
+    """Parâmetros da URL já decodificados.
+
+    O servidor Robyn entrega os valores como vieram na URL ("Jo%C3%A3o+Silva"); sem
+    decodificar, buscas com acento ou espaço não encontram nada e as mensagens de
+    confirmação aparecem com "+" e "%". Todas as rotas leem a URL por aqui.
+    """
+
+    __slots__ = ("_raw",)
+
+    def __init__(self, request: Request) -> None:
+        self._raw = request.query_params
+
+    def get(self, name: str, default: str | None = "") -> str | None:
+        value = self._raw.get(name, None)
+        return default if value is None else unquote_plus(value)
+
+
+def _query(request: Request) -> _Query:
+    return _Query(request)
 
 
 def _form_data(request: Request) -> dict[str, str]:
@@ -436,9 +473,7 @@ async def _render_counterparties(
         offset=(number - 1) * PAGE_SIZE,
     )
     contacts = rows[:PAGE_SIZE]
-    params = {
-        key: value for key in ("role", "status") if (value := request.query_params.get(key, ""))
-    }
+    params = {key: value for key in ("role", "status") if (value := _query(request).get(key, ""))}
     pagination = PageInfo(number, number > 1, len(rows) > PAGE_SIZE, params)
     return _page(
         "finance/contacts.html",
@@ -500,7 +535,7 @@ async def _render_title_register(
     form: dict[str, str] | None = None,
 ) -> str:
     """Renderiza títulos próprios, sem consultar o extrato de transações."""
-    query_params = request.query_params
+    query_params = _query(request)
     search = query_params.get("q", "").strip()[:120]
     status = query_params.get("status", "open")
     if status not in {"open", "partial", "settled", "overdue", "cancelled", "all"}:

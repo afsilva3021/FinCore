@@ -24,6 +24,8 @@ from fincore.infrastructure.models import (
     Organization,
     Product,
     ProductGroup,
+    StockBalance,
+    StockMovement,
     UnitOfMeasure,
     User,
     Warehouse,
@@ -198,6 +200,8 @@ async def set_warehouse_active(
         raise ValueError("Depósito não encontrado nesta organização.")
     if warehouse.is_default and not is_active:
         raise ValueError("Defina outro depósito como padrão antes de inativar este.")
+    if not is_active and await StockBalance.filter(warehouse=warehouse, quantity__gt=0).exists():
+        raise ValueError("Este depósito ainda tem estoque; transfira ou ajuste o saldo antes.")
     warehouse.is_active = is_active
     await warehouse.save(update_fields=["is_active"])
     return warehouse
@@ -269,6 +273,19 @@ async def save_product(
             not group.is_active and (product is None or product.group_id != group.id)
         ):
             raise ValueError("Selecione um grupo ativo desta organização.")
+
+    if product is not None:
+        # Com movimentos gravados, a unidade define o sentido das quantidades do histórico.
+        if product.unit_id != unit.id and await StockMovement.filter(product=product).exists():
+            raise ValueError(
+                "Este produto já tem movimentos de estoque; a unidade de medida não pode mudar."
+            )
+        if (
+            product.tracks_stock
+            and not tracks_stock
+            and await StockBalance.filter(product=product, quantity__gt=0).exists()
+        ):
+            raise ValueError("Zere o estoque do produto antes de desligar o controle de estoque.")
 
     duplicates = Product.filter(organization=organization)
     if product is not None:

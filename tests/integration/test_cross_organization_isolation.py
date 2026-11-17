@@ -21,6 +21,7 @@ from fincore.application.accounting import create_journal_entry
 from fincore.application.counterparties import save_counterparty
 from fincore.application.finance import create_account, create_movement
 from fincore.application.identity import register_user
+from fincore.application.inventory import register_stock_movement
 from fincore.application.products import save_product, save_product_group, save_warehouse
 from fincore.application.titles import create_titles
 from fincore.config.database import TORTOISE_ORM
@@ -37,6 +38,8 @@ from fincore.infrastructure.models import (
     Product,
     ProductGroup,
     ReconciliationMatch,
+    StockBalance,
+    StockMovement,
     UnitOfMeasure,
     Warehouse,
 )
@@ -147,8 +150,22 @@ async def _seed_organization_a():
         unit_id=unit.id,
         group_id=group.id,
     )
+    stock_movement, _ = await register_stock_movement(
+        organization=organization,
+        user=user,
+        operation_key=uuid4(),
+        direction="in",
+        reason="opening",
+        product_id=product.id,
+        warehouse_id=warehouse.id,
+        quantity=Decimal("7"),
+        unit_cost=Decimal("3.00"),
+        occurred_on=date.today(),
+        notes=f"{SECRET_NAME} movimento de estoque",
+    )
     return {
         "organization": organization,
+        "stock_movement": stock_movement,
         "unit": unit,
         "group": group,
         "warehouse": warehouse,
@@ -194,6 +211,10 @@ async def _snapshot(seed: dict) -> dict:
         "warehouses": await Warehouse.filter(organization=organization)
         .order_by("code")
         .values("id", "code", "name", "is_active", "is_default"),
+        "stock_balances": await StockBalance.filter(organization=organization).values(
+            "id", "quantity", "total_value", "movement_count"
+        ),
+        "stock_movements": await StockMovement.filter(organization=organization).count(),
         "matches": await ReconciliationMatch.filter(
             statement_transaction__organization=organization
         ).count(),
@@ -295,6 +316,38 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
             api,
             json.dumps({"sku": "INTRUSO-C", "name": "Intruso", "unit_id": a["unit"]}),
         ),
+        ("post", f"/stock/movements/{a['stock_movement']}/reverse", form, ""),
+        (
+            "post",
+            "/stock/movements",
+            form,
+            f"operation_key={uuid4()}&kind=exit&product_id={a['product']}"
+            f"&warehouse_id={a['warehouse']}&quantity=1&occurred_on={today}",
+        ),
+        (
+            "post",
+            "/stock/movements",
+            form,
+            f"operation_key={seed['stock_movement'].operation_key}&kind=entry"
+            f"&product_id={a['product']}&warehouse_id={a['warehouse']}&quantity=1"
+            f"&unit_cost=1&occurred_on={today}",
+        ),
+        ("post", f"/api/v1/stock/movements/{a['stock_movement']}/reverse", api, "{}"),
+        (
+            "post",
+            "/api/v1/stock/movements",
+            api,
+            json.dumps(
+                {
+                    "type": "exit",
+                    "operation_key": str(uuid4()),
+                    "product_id": a["product"],
+                    "warehouse_id": a["warehouse"],
+                    "quantity": "1",
+                    "occurred_on": today,
+                }
+            ),
+        ),
         ("get", f"/api/v1/transactions/{a['open_movement']}", api, None),
         (
             "post",
@@ -323,3 +376,23 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
     # Nada foi criado na organização B apontando para unidade ou grupo da organização A.
     assert not await Product.filter(organization=intruder_org).exists()
     assert not await ProductGroup.filter(organization=intruder_org).exists()
+    assert not await StockMovement.filter(organization=intruder_org).exists()
+
+    # Listagens da organização B não mostram nada da organização A.
+    for path in (
+        "/stock",
+        "/stock/movements",
+        "/products",
+        "/api/v1/stock/balances",
+        "/api/v1/stock/movements",
+    ):
+        response = await asyncio.to_thread(client.get, path, headers=form)
+        assert response.status_code == 200, path
+        assert SECRET_NAME not in response.text, f"{path} revelou dados da organização A"
+    filtered = await asyncio.to_thread(
+        client.get,
+        "/api/v1/stock/movements",
+        headers=form,
+        query_params={"product_id": a["product"]},
+    )
+    assert json.loads(filtered.text)["total"] == 0
