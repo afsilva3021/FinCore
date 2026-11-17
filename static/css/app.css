@@ -311,3 +311,19 @@ html[data-theme="dark"] .title-settlement>summary{color:#acd0f7;border-color:#54
 
 /* Compras e vendas: campo curto de quantidade dentro de tabelas. */
 .qty-input { max-width: 110px; }
+
+/* CRM: quadro do funil. */
+.crm-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(165px, 1fr); gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.crm-column { background: #f3f6fa; border: 1px solid #e1e9f2; border-radius: 8px; padding: 10px; min-height: 150px; display: flex; flex-direction: column; gap: 8px; }
+.crm-column > header { display: flex; align-items: center; justify-content: space-between; font-size: 14px; color: #304864; }
+.crm-card { display: grid; gap: 2px; background: #fff; border: 1px solid #e1e9f2; border-radius: 8px; padding: 10px; text-decoration: none; color: #596d81; font-size: 14px; box-shadow: 0 2px 7px #193b2d07; }
+.crm-card:hover, .crm-card:focus-visible { border-color: #72a9e5; }
+.crm-card strong { color: #263c53; }
+.crm-card-value { color: #337acb; font-weight: 600; }
+.crm-empty { font-size: 14px; color: #8c9aaa; margin: 0; }
+html[data-theme="dark"] .crm-column { background: #111f31; border-color: #2a3b53; }
+html[data-theme="dark"] .crm-column > header { color: #d9e5f3; }
+html[data-theme="dark"] .crm-card { background: #152338; border-color: #2a3b53; color: #bdccdd; }
+html[data-theme="dark"] .crm-card strong { color: #e2ecf7; }
+html[data-theme="dark"] .crm-card-value { color: #9ac8ff; }
+html[data-theme="dark"] .crm-empty { color: #a4b6ca; }

@@ -25,6 +25,8 @@
       </div>
       <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-commercial"><span>VENDAS E COMPRAS</span><i aria-hidden="true">⌄</i></button>
       <div class="nav-group" id="nav-commercial" hidden>
+        <a class="nav-link {% if active == 'crm' %}active{% endif %}" href="/crm"><span>◎</span> CRM</a>
+        <a class="nav-link {% if active == 'crm-leads' %}active{% endif %}" href="/crm/leads"><span>♙</span> Leads</a>
         <a class="nav-link {% if active == 'sales' %}active{% endif %}" href="/sales"><span>↗</span> Vendas</a>
         <a class="nav-link {% if active == 'purchases' %}active{% endif %}" href="/purchases"><span>↘</span> Pedidos de compra</a>
       </div>

@@ -112,3 +112,19 @@ Autenticação, organizações, lançamentos, plano de contas, integrações ban
 - Devolução restaura o estoque pelo custo original, cancela títulos e inverte receita e custo; é recusada se houver recebimento.
 - Pedido faturado não é cancelado; orçamento vencido não é confirmado.
 - Vendas de uma organização não são vistas nem alteradas por outra.
+
+## Fase 12 — CRM (ERP)
+
+### Histórias de usuário
+
+- Como vendedor, quero registrar contatos comerciais e acompanhar cada negociação por etapas.
+- Como vendedor, quero converter um lead em cliente sem duplicar quem já está cadastrado.
+- Como proprietário, quero ver quanto há em negociação e a taxa de conversão.
+
+### Critérios de aceite
+
+- Conversão de lead com CPF/CNPJ já cadastrado vincula ao contato existente.
+- Toda mudança de etapa fica no histórico; perda exige motivo e ganho exige cliente.
+- Oportunidade ganha gera orçamento ligado a ela.
+- Taxa de conversão = ganhas ÷ (ganhas + perdidas).
+- Leads, oportunidades e atividades de uma organização não são vistos nem alterados por outra.

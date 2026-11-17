@@ -795,3 +795,121 @@ class SalesInvoiceItem(Model):
         null=True,
         on_delete=fields.RESTRICT,
     )
+
+
+# --- CRM (ERP, fase 12) -----------------------------------------------------------------
+
+
+class PipelineStage(Model):
+    """Etapa do funil de vendas. `kind` diz se a oportunidade está aberta, ganha ou perdida."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="pipeline_stages", on_delete=fields.CASCADE
+    )
+    name = fields.CharField(max_length=60)
+    position = fields.IntField()
+    kind = fields.CharField(max_length=8, default="open")
+    is_active = fields.BooleanField(default=True)
+
+    class Meta:
+        unique_together = (("organization", "name"),)
+
+
+class Lead(Model):
+    """Contato comercial que ainda não é cliente."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="leads", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_leads", on_delete=fields.RESTRICT
+    )
+    name = fields.CharField(max_length=160)
+    company = fields.CharField(max_length=160, null=True)
+    email = fields.CharField(max_length=254, null=True)
+    phone = fields.CharField(max_length=40, null=True)
+    source = fields.CharField(max_length=60, null=True)
+    status = fields.CharField(max_length=12, default="open")
+    # Cliente criado ou vinculado quando o lead é convertido.
+    counterparty = fields.ForeignKeyField(
+        "models.Counterparty", related_name="leads", null=True, on_delete=fields.RESTRICT
+    )
+    notes = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+
+class Opportunity(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="opportunities", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_opportunities", on_delete=fields.RESTRICT
+    )
+    owner = fields.ForeignKeyField(
+        "models.User", related_name="owned_opportunities", on_delete=fields.RESTRICT
+    )
+    title = fields.CharField(max_length=160)
+    lead = fields.ForeignKeyField(
+        "models.Lead", related_name="opportunities", null=True, on_delete=fields.RESTRICT
+    )
+    counterparty = fields.ForeignKeyField(
+        "models.Counterparty", related_name="opportunities", null=True, on_delete=fields.RESTRICT
+    )
+    stage = fields.ForeignKeyField(
+        "models.PipelineStage", related_name="opportunities", on_delete=fields.RESTRICT
+    )
+    expected_value = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    expected_close = fields.DateField(null=True)
+    lost_reason = fields.CharField(max_length=240, null=True)
+    # Orçamento gerado a partir desta oportunidade.
+    sales_order = fields.ForeignKeyField(
+        "models.SalesOrder", related_name="opportunities", null=True, on_delete=fields.SET_NULL
+    )
+    closed_at = fields.DatetimeField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+
+class OpportunityStageChange(Model):
+    """Histórico de mudanças de etapa de uma oportunidade."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    opportunity = fields.ForeignKeyField(
+        "models.Opportunity", related_name="stage_changes", on_delete=fields.CASCADE
+    )
+    from_stage = fields.ForeignKeyField(
+        "models.PipelineStage", related_name="changes_from", null=True, on_delete=fields.RESTRICT
+    )
+    to_stage = fields.ForeignKeyField(
+        "models.PipelineStage", related_name="changes_to", on_delete=fields.RESTRICT
+    )
+    changed_by = fields.ForeignKeyField(
+        "models.User", related_name="opportunity_stage_changes", on_delete=fields.RESTRICT
+    )
+    note = fields.CharField(max_length=240, null=True)
+    changed_at = fields.DatetimeField(auto_now_add=True)
+
+
+class CrmActivity(Model):
+    """Tarefa, ligação, reunião ou nota ligada a um lead ou a uma oportunidade."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="crm_activities", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_crm_activities", on_delete=fields.RESTRICT
+    )
+    kind = fields.CharField(max_length=8, default="task")
+    subject = fields.CharField(max_length=200)
+    due_on = fields.DateField(null=True)
+    done_at = fields.DatetimeField(null=True)
+    lead = fields.ForeignKeyField(
+        "models.Lead", related_name="activities", null=True, on_delete=fields.CASCADE
+    )
+    opportunity = fields.ForeignKeyField(
+        "models.Opportunity", related_name="activities", null=True, on_delete=fields.CASCADE
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)

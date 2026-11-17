@@ -31,6 +31,7 @@ from fincore.application.identity import (
 from fincore.application.members import (
     AREA_CATALOG,
     AREA_CONTACTS,
+    AREA_CRM,
     AREA_FINANCE,
     AREA_INVENTORY,
     AREA_PURCHASING,
@@ -107,6 +108,8 @@ AREA_PATH_PREFIXES = {
     "/contacts": AREA_CONTACTS,
     "/sales": AREA_SALES,
     "/api/v1/sales-orders": AREA_SALES,
+    "/crm": AREA_CRM,
+    "/api/v1/crm": AREA_CRM,
 }
 
 

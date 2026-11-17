@@ -46,3 +46,6 @@
 - **Orçamento e pedido no mesmo registro (fase 11):** `SalesOrder` passa por `quote → confirmed → invoiced`; evita duplicar itens entre duas entidades. O faturamento é do pedido inteiro e a devolução é total; faturamento e devolução parciais ficam como evolução.
 - **Devolução pelo custo original:** o estorno do faturamento usa o valor do movimento de saída, não o custo médio atual, para que estoque e CMV voltem exatamente ao que eram.
 - **Preço do item:** em branco usa o preço de venda do cadastro no momento do orçamento; depois disso o preço do pedido não muda com o cadastro.
+- **CRM sobre o cadastro existente (fase 12):** lead é um registro próprio e só vira `Counterparty` na conversão; a deduplicação é pelo CPF/CNPJ, único por organização. Não há segundo cadastro de clientes.
+- **Situação da oportunidade vem da etapa:** `PipelineStage.kind` (`open`/`won`/`lost`) define se está em andamento, ganha ou perdida; não existe campo de status separado para divergir.
+- **Etapas fixas nesta fase:** o funil padrão é criado por organização e já está em tabela própria, então permitir edição depois não exige migração de dados.

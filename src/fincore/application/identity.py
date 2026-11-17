@@ -10,6 +10,7 @@ from argon2.exceptions import VerificationError, VerifyMismatchError
 from tortoise.expressions import F
 from tortoise.transactions import in_transaction
 
+from fincore.application.crm import create_default_pipeline
 from fincore.application.products import create_default_catalog
 from fincore.infrastructure.models import (
     LedgerAccount,
@@ -116,6 +117,7 @@ async def register_user(full_name: str, email: str, password: str, organization_
             ]
         )
         await create_default_catalog(organization, user)
+        await create_default_pipeline(organization)
     return user
 
 

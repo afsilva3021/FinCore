@@ -19,6 +19,7 @@ from tortoise import Tortoise
 from fincore.app import app
 from fincore.application.accounting import create_journal_entry
 from fincore.application.counterparties import save_counterparty
+from fincore.application.crm import add_activity, create_opportunity, save_lead
 from fincore.application.finance import create_account, create_movement
 from fincore.application.identity import register_user
 from fincore.application.inventory import register_stock_movement
@@ -33,14 +34,18 @@ from fincore.application.titles import create_titles
 from fincore.config.database import TORTOISE_ORM
 from fincore.infrastructure.models import (
     Counterparty,
+    CrmActivity,
     FinancialAccount,
     FinancialTitle,
     FinancialTransaction,
     ImportedStatementTransaction,
     JournalEntry,
     JournalEntryLine,
+    Lead,
     LedgerAccount,
     Membership,
+    Opportunity,
+    PipelineStage,
     Product,
     ProductGroup,
     PurchaseOrder,
@@ -231,8 +236,24 @@ async def _seed_organization_a():
         operation_key=uuid4(),
         issued_on=date.today(),
     )
+    lead = await save_lead(organization=organization, user=user, name=f"{SECRET_NAME} lead")
+    opportunity = await create_opportunity(
+        organization=organization, user=user, title=f"{SECRET_NAME} oportunidade", lead_id=lead.id
+    )
+    activity = await add_activity(
+        organization=organization,
+        user=user,
+        kind="task",
+        subject=f"{SECRET_NAME} atividade",
+        opportunity_id=opportunity.id,
+    )
+    stage = await PipelineStage.get(organization=organization, name="Perdido")
     return {
         "organization": organization,
+        "lead": lead,
+        "opportunity": opportunity,
+        "activity": activity,
+        "stage": stage,
         "sales_order": sales_order,
         "sales_invoice": sales_invoice,
         "purchase_order": purchase_order,
@@ -288,6 +309,12 @@ async def _snapshot(seed: dict) -> dict:
             "id", "quantity", "total_value", "movement_count"
         ),
         "stock_movements": await StockMovement.filter(organization=organization).count(),
+        "leads": await Lead.filter(organization=organization).values("id", "status"),
+        "opportunities": await Opportunity.filter(organization=organization).values(
+            "id", "stage_id", "lost_reason"
+        ),
+        "activities": await CrmActivity.filter(organization=organization).values("id", "done_at"),
+        "activity_count": await CrmActivity.filter(organization=organization).count(),
         "sales_orders": await SalesOrder.filter(organization=organization)
         .order_by("number")
         .values("id", "status"),
@@ -404,6 +431,23 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
             api,
             json.dumps({"sku": "INTRUSO-C", "name": "Intruso", "unit_id": a["unit"]}),
         ),
+        ("get", f"/crm/opportunities/{a['opportunity']}", form, None),
+        (
+            "post",
+            f"/crm/opportunities/{a['opportunity']}/stage",
+            form,
+            f"stage_id={a['stage']}&lost_reason=Invadido",
+        ),
+        (
+            "post",
+            f"/crm/opportunities/{a['opportunity']}/activities",
+            form,
+            "kind=note&subject=Invadido",
+        ),
+        ("post", f"/crm/activities/{a['activity']}/done", form, ""),
+        ("post", f"/crm/leads/{a['lead']}/convert", form, "person_type=individual"),
+        ("post", f"/crm/leads/{a['lead']}/discard", form, ""),
+        ("post", "/crm/opportunities", form, f"title=Intruso&lead_id={a['lead']}"),
         ("get", f"/sales/{a['sales_order']}", form, None),
         ("post", f"/sales/{a['sales_order']}/cancel", form, ""),
         ("post", f"/sales/{a['sales_order']}/confirm", form, ""),
@@ -487,6 +531,7 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
     assert not await Product.filter(organization=intruder_org).exists()
     assert not await ProductGroup.filter(organization=intruder_org).exists()
     assert not await StockMovement.filter(organization=intruder_org).exists()
+    assert not await Opportunity.filter(organization=intruder_org).exists()
 
     # Listagens da organização B não mostram nada da organização A.
     for path in (
@@ -499,6 +544,9 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
         "/api/v1/purchase-orders",
         "/sales",
         "/api/v1/sales-orders",
+        "/crm",
+        "/crm/leads",
+        "/api/v1/crm/opportunities",
     ):
         response = await asyncio.to_thread(client.get, path, headers=form)
         assert response.status_code == 200, path

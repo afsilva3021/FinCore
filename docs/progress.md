@@ -270,3 +270,20 @@ Segunda fase do roteiro em [erp-roadmap.md](erp-roadmap.md). Compras e vendas ai
 - [ ] Diferenças em relação ao roteiro: orçamento e pedido são o mesmo registro (`SalesOrder`) em estados diferentes, o faturamento é sempre do pedido inteiro e a devolução é sempre total.
 - [ ] Sem reserva de estoque na confirmação: o estoque é conferido no faturamento.
 - [ ] Desconto só por item; rascunho não é editado; API só de consulta.
+
+## ERP fase 12 — CRM (2026-11-17)
+
+- [x] Modelos `PipelineStage`, `Lead`, `Opportunity`, `OpportunityStageChange` e `CrmActivity`; migration `0023` aditiva, aplicada em banco limpo e no banco de teste (as 1.564 organizações existentes receberam as 6 etapas padrão).
+- [x] Funil padrão: Novo, Qualificado, Proposta, Negociação, Ganho e Perdido, criado no cadastro da organização.
+- [x] Leads: cadastro, descarte e conversão em cliente. A conversão reaproveita um contato com o mesmo CPF/CNPJ (marcando-o como cliente) em vez de duplicar, e leva junto as oportunidades do lead.
+- [x] Oportunidades para um lead ou um cliente, com valor estimado e previsão de fechamento. Mudança de etapa registrada no histórico com data e responsável; perda exige motivo, ganho exige cliente (lead convertido); oportunidade encerrada pode ser reaberta.
+- [x] Atividades (tarefa, ligação, reunião, nota) ligadas a lead ou oportunidade, com conclusão e lista de próximas atividades.
+- [x] Ligação com vendas: "Gerar orçamento" abre o formulário de vendas com o cliente escolhido, e o orçamento criado fica ligado à oportunidade.
+- [x] Indicadores do quadro: valor em aberto, valor ganho e taxa de conversão (ganhas sobre encerradas), conferidos nos testes.
+- [x] Páginas `/crm` (quadro), `/crm/leads` e `/crm/opportunities/{id}`; API de consulta `/api/v1/crm/opportunities`. Área de escrita `crm` para os perfis Proprietário e Vendas.
+- [x] Isolamento: 7 tentativas e 3 listagens novas. Seed com leads, oportunidades em várias etapas e atividades.
+- [x] Fluxo real no Chrome: lead novo → oportunidade → tentativa de ganhar recusada → conversão → ganho → gerar orçamento; quadro também no tema escuro.
+- [x] Ruff e suíte completa aprovados: 280 testes (174 unitários, 106 de integração).
+- [ ] As etapas do funil são fixas: ainda não há tela para criar, renomear ou reordenar etapas.
+- [ ] O quadro não tem arrastar e soltar; a etapa muda pela página da oportunidade.
+- [ ] Atividades de lead só pelo caso de uso (a tela registra atividades em oportunidades); o responsável é sempre quem criou a oportunidade.

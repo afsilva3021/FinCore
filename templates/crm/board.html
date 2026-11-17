@@ -1,0 +1,54 @@
+{% extends "finance/layout.html" %}
+{% block title %}CRM · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · FUNIL DE VENDAS</span><h1>Oportunidades</h1><p>Acompanhe cada negociação da primeira conversa ao fechamento.</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/crm/leads">Leads</a><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="opportunity-drawer" aria-expanded="false">＋ Nova oportunidade</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<section class="title-summary" aria-label="Resumo do funil">
+  <article class="title-summary-card"><span>Em aberto</span><strong>R$ {{ totals.open[1]|brl }}</strong><small>{{ totals.open[0] }} oportunidade(s)</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Ganhas</span><strong>R$ {{ totals.won[1]|brl }}</strong><small>{{ totals.won[0] }} oportunidade(s)</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Taxa de conversão</span><strong>{% if rate is not none %}{{ rate|string|replace('.', ',') }}%{% else %}—{% endif %}</strong><small>ganhas sobre encerradas ({{ totals.won[0] + totals.lost[0] }})</small></article>
+</section>
+<section class="crm-board mb-3" aria-label="Quadro do funil">
+  {% for column in columns %}
+  <article class="crm-column" aria-label="{{ column.stage.name }}">
+    <header><strong>{{ column.stage.name }}</strong><span class="step-count">{{ column.cards|length }}</span></header>
+    {% for card in column.cards %}
+    <a class="crm-card" href="/crm/opportunities/{{ card.item.id }}"><strong>{{ card.item.title }}</strong><span>{{ card.party }}</span><span class="crm-card-value">R$ {{ card.item.expected_value|brl }}{% if card.item.expected_close %} · até {{ card.item.expected_close.strftime('%d/%m') }}{% endif %}</span></a>
+    {% else %}<p class="crm-empty">{% if column.stage.kind == 'open' %}Nenhuma oportunidade{% else %}Nada nos últimos 30 dias{% endif %}</p>
+    {% endfor %}
+  </article>
+  {% endfor %}
+</section>
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Próximas atividades</h3><p>Tarefas, ligações e reuniões em aberto, as mais próximas primeiro.</p></div></div>
+  {% if activities %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Quando</th><th>Atividade</th><th>Ligada a</th><th>Ações</th></tr></thead><tbody>
+    {% for activity in activities %}
+    <tr><td class="text-nowrap {{ 'amount-expense' if activity.due_on and activity.due_on < today else '' }}">{{ activity.due_on.strftime('%d/%m/%Y') if activity.due_on else 'Sem data' }}</td>
+      <td><strong>{{ activity.subject }}</strong><small class="d-block text-secondary">{{ activity_kinds[activity.kind] }}</small></td>
+      <td>{% if activity.opportunity %}<a href="/crm/opportunities/{{ activity.opportunity.id }}">{{ activity.opportunity.title }}</a>{% elif activity.lead %}{{ activity.lead.name }}{% endif %}</td>
+      <td><form method="post" action="/crm/activities/{{ activity.id }}/done"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="board"><button class="btn btn-sm btn-outline-success" type="submit">Concluir</button></form></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="finance-empty"><span>✓</span><strong>Nenhuma atividade em aberto</strong><small>Registre atividades dentro de cada oportunidade.</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="opportunity-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="opportunity-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">CRM</span><h2 id="opportunity-drawer-title">Nova oportunidade</h2><p>Entra na primeira etapa do funil.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/crm/opportunities" class="movement-drawer-form" data-movement-form>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="opportunity-title">Título</label><input class="form-control" id="opportunity-title" name="title" maxlength="160" value="{{ form.get('title','') }}" required placeholder="Ex.: Coffee break mensal"></div>
+      <div><label class="form-label" for="opportunity-lead">Lead</label><select class="form-select" id="opportunity-lead" name="lead_id"><option value="">Nenhum</option>{% for lead in leads %}<option value="{{ lead.id }}" {% if form.get('lead_id') == lead.id|string %}selected{% endif %}>{{ lead.name }}{% if lead.company %} — {{ lead.company }}{% endif %}</option>{% endfor %}</select></div>
+      <div><label class="form-label" for="opportunity-customer">ou Cliente</label><select class="form-select" id="opportunity-customer" name="counterparty_id"><option value="">Nenhum</option>{% for customer in customers %}<option value="{{ customer.id }}" {% if form.get('counterparty_id') == customer.id|string %}selected{% endif %}>{{ customer.trade_name or customer.name }}</option>{% endfor %}</select><small class="form-text">Escolha um lead ou um cliente, não os dois.</small></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="opportunity-value">Valor estimado (R$)</label><input class="form-control" id="opportunity-value" name="expected_value" inputmode="decimal" maxlength="20" value="{{ form.get('expected_value','') }}" placeholder="0,00"></div><div><label class="form-label" for="opportunity-close">Previsão de fechamento</label><input class="form-control" id="opportunity-close" name="expected_close" type="date" value="{{ form.get('expected_close','') }}"></div></div>
+    </div>
+    <div class="movement-drawer-footer"><span>O valor é uma estimativa; não entra no financeiro.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Criar oportunidade</button></div></div>
+  </form>
+</aside>
+{% endblock %}

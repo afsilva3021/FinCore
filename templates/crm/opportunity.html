@@ -1,0 +1,58 @@
+{% extends "finance/layout.html" %}
+{% block title %}{{ opportunity.title }} · CRM · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · OPORTUNIDADE</span><h1>{{ opportunity.title }} <span class="badge {{ stage_badges[opportunity.stage.kind] }} align-middle fs-6">{{ opportunity.stage.name }}</span></h1><p>{{ party }}{% if not opportunity.counterparty %} · lead ainda não convertido{% endif %} · responsável {{ opportunity.owner.full_name }}</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/crm">Voltar ao funil</a>
+    {% if opportunity.sales_order %}<a class="btn btn-outline-primary" href="/sales/{{ opportunity.sales_order.id }}">Ver orçamento PV-{{ '%05d'|format(opportunity.sales_order.number) }}</a>
+    {% elif opportunity.counterparty and opportunity.stage.kind != 'lost' %}<a class="btn btn-primary" href="/sales?new=1&customer={{ opportunity.counterparty.id }}&opportunity={{ opportunity.id }}">Gerar orçamento</a>{% endif %}
+  </div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<section class="title-summary" aria-label="Resumo da oportunidade">
+  <article class="title-summary-card"><span>Valor estimado</span><strong>R$ {{ opportunity.expected_value|brl }}</strong><small>estimativa</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Previsão de fechamento</span><strong class="fs-6">{{ opportunity.expected_close.strftime('%d/%m/%Y') if opportunity.expected_close else 'Sem previsão' }}</strong><small>&nbsp;</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Situação</span><strong class="fs-6">{{ {'open': 'Em andamento', 'won': 'Ganha', 'lost': 'Perdida'}[opportunity.stage.kind] }}</strong><small>{{ opportunity.lost_reason or '&nbsp;'|safe }}</small></article>
+</section>
+
+<article class="panel-card transactions-table-card mb-3">
+  <div class="panel-heading"><div><h3>Mudar etapa</h3><p>Para marcar como ganha, o lead precisa estar convertido em cliente. Para marcar como perdida, informe o motivo.</p></div></div>
+  <form method="post" action="/crm/opportunities/{{ opportunity.id }}/stage" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-md-4"><label class="form-label" for="stage-select">Nova etapa</label><select class="form-select" id="stage-select" name="stage_id">{% for stage in stages if stage.id != opportunity.stage_id %}<option value="{{ stage.id }}" {% if form.get('stage_id') == stage.id|string %}selected{% endif %}>{{ stage.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-5"><label class="form-label" for="lost-reason">Motivo da perda <small class="text-secondary fw-normal">(só para Perdido)</small></label><input class="form-control" id="lost-reason" name="lost_reason" maxlength="240" value="{{ form.get('lost_reason','') }}"></div>
+    <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Mover</button></div>
+  </form>
+</article>
+
+<article class="panel-card transactions-table-card mb-3">
+  <div class="panel-heading"><div><h3>Atividades</h3><p>Tarefas, ligações e reuniões têm conclusão; a nota é só um registro.</p></div><span class="step-count">{{ activities|length }} atividade(s)</span></div>
+  <form method="post" action="/crm/opportunities/{{ opportunity.id }}/activities" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-md-2"><label class="form-label" for="activity-kind">Tipo</label><select class="form-select" id="activity-kind" name="kind">{% for key, label in activity_kinds.items() %}<option value="{{ key }}" {% if form.get('kind') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-5"><label class="form-label" for="activity-subject">Assunto</label><input class="form-control" id="activity-subject" name="subject" maxlength="200" value="{{ form.get('subject','') }}" required></div>
+    <div class="col-md-2"><label class="form-label" for="activity-due">Data</label><input class="form-control" id="activity-due" name="due_on" type="date" value="{{ form.get('due_on','') }}"></div>
+    <div class="col-md-3"><button class="btn btn-outline-primary w-100" type="submit">Registrar atividade</button></div>
+  </form>
+  {% if activities %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Tipo</th><th>Assunto</th><th>Data</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for activity in activities %}
+    <tr><td>{{ activity_kinds[activity.kind] }}</td><td><strong>{{ activity.subject }}</strong><small class="d-block text-secondary">{{ activity.created_by.full_name }}</small></td>
+      <td class="text-nowrap">{{ activity.due_on.strftime('%d/%m/%Y') if activity.due_on else '—' }}</td>
+      <td>{% if activity.done_at %}<span class="badge text-bg-success">{{ 'Registrada' if activity.kind == 'note' else 'Concluída' }}</span>{% elif activity.due_on and activity.due_on < today %}<span class="badge text-bg-danger">Atrasada</span>{% else %}<span class="badge text-bg-warning">Em aberto</span>{% endif %}</td>
+      <td>{% if not activity.done_at %}<form method="post" action="/crm/activities/{{ activity.id }}/done"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-success" type="submit">Concluir</button></form>{% endif %}</td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% endif %}
+</article>
+
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Histórico de etapas</h3><p>Cada mudança fica registrada com data e responsável.</p></div></div>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Quando</th><th>De</th><th>Para</th><th>Quem</th><th>Observação</th></tr></thead><tbody>
+    {% for change in history %}
+    <tr><td class="text-nowrap">{{ change.changed_at.strftime('%d/%m/%Y %H:%M') }} UTC</td><td>{{ change.from_stage.name if change.from_stage else 'Criada' }}</td><td><strong>{{ change.to_stage.name }}</strong></td><td>{{ change.changed_by.full_name }}</td><td>{{ change.note or '—' }}</td></tr>
+    {% endfor %}
+  </tbody></table></div>
+</article>
+{% endblock %}

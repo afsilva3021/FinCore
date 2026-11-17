@@ -6,6 +6,7 @@ executada para que a apresentação possa paginá-la.
 """
 
 from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -16,14 +17,19 @@ from tortoise.queryset import QuerySet
 from fincore.infrastructure.models import (
     Category,
     Counterparty,
+    CrmActivity,
     FinancialAccount,
     FinancialTitle,
     FinancialTransaction,
     ImportedStatementTransaction,
     JournalEntry,
     JournalEntryLine,
+    Lead,
     Membership,
+    Opportunity,
+    OpportunityStageChange,
     Organization,
+    PipelineStage,
     Product,
     ProductGroup,
     PurchaseOrder,
@@ -622,3 +628,105 @@ async def sales_invoices(order: SalesOrder) -> list[SalesInvoice]:
 
 async def get_sales_invoice(organization: Organization, invoice_id: UUID) -> SalesInvoice | None:
     return await SalesInvoice.get_or_none(id=invoice_id, organization=organization)
+
+
+# --- CRM ------------------------------------------------------------------------------
+
+
+async def pipeline_stages(organization: Organization) -> list[PipelineStage]:
+    return await PipelineStage.filter(organization=organization, is_active=True).order_by(
+        "position"
+    )
+
+
+async def board_opportunities(organization: Organization, *, closed_days: int = 30):
+    """Oportunidades abertas e as encerradas nos últimos dias, para o quadro do funil."""
+    cutoff = datetime.now(UTC) - timedelta(days=closed_days)
+    return (
+        await Opportunity.filter(organization=organization)
+        .filter(Q(stage__kind="open") | Q(closed_at__gte=cutoff))
+        .select_related("stage", "lead", "counterparty", "owner")
+        .order_by("-created_at")
+        .limit(300)
+    )
+
+
+async def crm_totals(organization: Organization) -> dict[str, tuple[int, Decimal]]:
+    """Quantidade e valor estimado das oportunidades por tipo de etapa (open/won/lost)."""
+    rows = (
+        await Opportunity.filter(organization=organization)
+        .group_by("stage__kind")
+        .annotate(total=Count("id"), value=Sum("expected_value"))
+        .values("stage__kind", "total", "value")
+    )
+    totals = {kind: (0, Decimal("0.00")) for kind in ("open", "won", "lost")}
+    for row in rows:
+        totals[row["stage__kind"]] = (row["total"], row["value"] or Decimal("0.00"))
+    return totals
+
+
+def leads_query(organization: Organization, *, status: str = "", search: str = ""):
+    query = Lead.filter(organization=organization)
+    if status:
+        query = query.filter(status=status)
+    term = search.strip()
+    if term:
+        query = query.filter(
+            Q(name__icontains=term) | Q(company__icontains=term) | Q(email__icontains=term)
+        )
+    return query.select_related("counterparty").order_by("-created_at")
+
+
+async def open_leads(organization: Organization) -> list[Lead]:
+    return await Lead.filter(organization=organization, status="open").order_by("name")
+
+
+async def get_lead(organization: Organization, lead_id: UUID) -> Lead | None:
+    return await Lead.get_or_none(id=lead_id, organization=organization)
+
+
+async def get_opportunity(organization: Organization, opportunity_id: UUID) -> Opportunity | None:
+    return (
+        await Opportunity.filter(id=opportunity_id, organization=organization)
+        .select_related("stage", "lead", "counterparty", "owner", "sales_order")
+        .first()
+    )
+
+
+async def opportunity_history(opportunity: Opportunity) -> list[OpportunityStageChange]:
+    return (
+        await OpportunityStageChange.filter(opportunity=opportunity)
+        .select_related("from_stage", "to_stage", "changed_by")
+        .order_by("-changed_at")
+    )
+
+
+async def opportunity_activities(opportunity: Opportunity) -> list[CrmActivity]:
+    return (
+        await CrmActivity.filter(opportunity=opportunity)
+        .select_related("created_by")
+        .order_by("-created_at")
+    )
+
+
+async def pending_activities(organization: Organization, *, limit: int = 10):
+    """Atividades em aberto, as com data mais próxima primeiro (sem data por último)."""
+    dated = (
+        await CrmActivity.filter(organization=organization, done_at=None, due_on__not_isnull=True)
+        .select_related("opportunity", "lead")
+        .order_by("due_on")
+        .limit(limit)
+    )
+    if len(dated) >= limit:
+        return dated
+    undated = (
+        await CrmActivity.filter(organization=organization, done_at=None, due_on=None)
+        .select_related("opportunity", "lead")
+        .order_by("created_at")
+        .limit(limit - len(dated))
+    )
+    return [*dated, *undated]
+
+
+async def get_activity(organization: Organization, activity_id: UUID) -> CrmActivity | None:
+    return await CrmActivity.get_or_none(id=activity_id, organization=organization)

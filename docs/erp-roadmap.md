@@ -1,6 +1,6 @@
 # FinCore ERP — roteiro de transformação
 
-> **Situação: aprovado em 2026-11-17.** Fases 8 a 11 concluídas; fases 12 e 13 pendentes. Cada fase segue o fluxo do `AGENTS.md` (regra, testes, migration, documentação) e o que foi validado fica em `docs/progress.md`.
+> **Situação: aprovado em 2026-11-17.** Fases 8 a 12 concluídas; fase 13 pendente. Cada fase segue o fluxo do `AGENTS.md` (regra, testes, migration, documentação) e o que foi validado fica em `docs/progress.md`.
 
 ## 1. Objetivo e escopo
 
@@ -14,7 +14,7 @@ Módulos novos, na ordem de entrega:
 | 9 | Estoque ✅ | Entradas, saídas, ajustes, transferências, saldo e custo médio |
 | 10 | Compras ✅ | Pedido de compra → recebimento → estoque + contas a pagar |
 | 11 | Vendas ✅ | Orçamento → pedido → faturamento → baixa de estoque + contas a receber |
-| 12 | CRM | Leads, funil de oportunidades e atividades ligados a vendas |
+| 12 | CRM ✅ | Leads, funil de oportunidades e atividades ligados a vendas |
 | 13 | Fiscal (simulado) | Documento fiscal interno com dados tributários, sem SEFAZ |
 
 As fases 1 a 7 do `AGENTS.md` (fundação até integrações simuladas) continuam como estão.
@@ -107,7 +107,9 @@ Implementado de forma mais simples que o previsto abaixo: orçamento e pedido s�
 
 Aceite: faturamento sem estoque é recusado e nada é gravado; desconto e total em `Decimal` exato; dois faturamentos simultâneos do último item, só um passa; devolução gera entrada de estoque e estorno contábil.
 
-### Fase 12 — CRM
+### Fase 12 — CRM (concluída)
+
+Implementado com funil padrão fixo (sem tela de configuração de etapas) e quadro sem arrastar e soltar.
 
 - `Lead`: contato ainda não cliente; conversão cria ou vincula um `Counterparty`.
 - `PipelineStage` e `Opportunity`: funil configurável, valor estimado, responsável, motivo de perda.
@@ -143,4 +145,4 @@ Aceite: totais do documento batem com o faturamento; numeração sem buracos nem
 
 **Fase 10 (compras):** pedido de compra, recebimento total ou parcial com entrada em estoque (motivo `purchase`) e títulos a pagar lançados por competência (D Estoque / C Fornecedores). Concluída.
 
-**Fase 12 (CRM):** leads, funil de oportunidades e atividades, ligados a clientes e orçamentos.
+**Fase 13 (fiscal simulado):** documento fiscal interno gerado do faturamento, com dados tributários informados e sem SEFAZ.

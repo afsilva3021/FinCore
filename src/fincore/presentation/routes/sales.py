@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from robyn import Request, Response
 
+from fincore.application.crm import link_opportunity_order
 from fincore.application.queries import (
     active_accounts,
     active_customers,
@@ -181,6 +182,7 @@ def register_sales_routes(app: object) -> None:
                 "installment_count": "1",
                 "first_due_days": "0",
                 "customer_id": query.get("customer", "") or "",
+                "opportunity_id": query.get("opportunity", "") or "",
             }
         filled = [index for index in range(1, MAX_FORM_ITEMS + 1) if form.get(f"product_{index}")]
         body = _page(
@@ -259,7 +261,16 @@ def register_sales_routes(app: object) -> None:
             )
         except ValueError as exc:
             return await render_orders(request, current[0], organization, form=form, error=str(exc))
-        return _redirect(f"/sales/{order.id}?{urlencode({'message': 'Orçamento criado.'})}")
+        message = "Orçamento criado."
+        try:
+            opportunity_id = UUID(form.get("opportunity_id", ""))
+        except ValueError:
+            opportunity_id = None
+        if opportunity_id is not None and await link_opportunity_order(
+            organization, opportunity_id, order
+        ):
+            message = "Orçamento criado e ligado à oportunidade."
+        return _redirect(f"/sales/{order.id}?{urlencode({'message': message})}")
 
     async def render_order(
         request: Request,

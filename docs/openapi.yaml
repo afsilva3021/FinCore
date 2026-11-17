@@ -219,6 +219,24 @@ components:
               unit_price: {$ref: '#/components/schemas/Money'}
               discount: {$ref: '#/components/schemas/Money'}
               total: {$ref: '#/components/schemas/Money'}
+    Opportunity:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        stage:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+            kind: {type: string, enum: [open, won, lost]}
+        party: {type: string, description: Nome do cliente ou do lead.}
+        lead_id: {type: [string, "null"], format: uuid}
+        counterparty_id: {type: [string, "null"], format: uuid}
+        expected_value: {$ref: '#/components/schemas/Money'}
+        expected_close: {type: [string, "null"], format: date}
+        lost_reason: {type: [string, "null"]}
+        sales_order_id: {type: [string, "null"], format: uuid}
     Title:
       type: object
       properties:
@@ -520,6 +538,26 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/SalesOrder'}}}
         "401": {$ref: '#/components/responses/Unauthenticated'}
         "404": {$ref: '#/components/responses/NotFound'}
+  /api/v1/crm/opportunities:
+    get:
+      summary: Lista oportunidades do funil
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        "200":
+          description: Oportunidades da mais nova para a mais antiga.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Opportunity'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
   /api/v1/titles:
     get:
       summary: Lista títulos a pagar/receber

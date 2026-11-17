@@ -1,0 +1,52 @@
+{% extends "finance/layout.html" %}
+{% block title %}Leads · CRM · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">CRM · LEADS</span><h1>Leads</h1><p>Contatos comerciais que ainda não são clientes. Ao converter, o lead vira um cliente do cadastro.</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/crm">Funil</a><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="lead-drawer" aria-expanded="false">＋ Novo lead</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Leads cadastrados</h3><p>Converter com CPF/CNPJ de um contato que já existe vincula a ele, sem duplicar.</p></div><span class="step-count">{{ leads|length }} nesta página</span></div>
+  <form method="get" action="/crm/leads" class="title-filters mb-3">
+    <div class="title-search-field"><label class="form-label" for="lead-search">Buscar</label><input class="form-control" id="lead-search" name="q" maxlength="80" value="{{ search }}" placeholder="Nome, empresa ou e-mail"></div>
+    <div><label class="form-label" for="lead-status">Situação</label><select class="form-select" id="lead-status" name="status"><option value="">Todas</option>{% for key, label in status_labels.items() %}<option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/crm/leads">Limpar</a></div>
+  </form>
+  {% if leads %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Lead</th><th>Contato</th><th>Origem</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for lead in leads %}
+    <tr><td><strong>{{ lead.name }}</strong>{% if lead.company %}<small class="d-block text-secondary">{{ lead.company }}</small>{% endif %}</td>
+      <td>{{ lead.email or '—' }}<small class="d-block text-secondary">{{ lead.phone or '' }}</small></td>
+      <td>{{ lead.source or '—' }}</td>
+      <td><span class="badge {{ {'open': 'text-bg-primary', 'converted': 'text-bg-success', 'discarded': 'text-bg-secondary'}[lead.status] }}">{{ status_labels[lead.status] }}</span>{% if lead.counterparty %}<small class="d-block text-secondary">{{ lead.counterparty.name }}</small>{% endif %}</td>
+      <td>{% if lead.status == 'open' %}<div class="d-flex gap-2 flex-wrap"><a class="btn btn-sm btn-outline-primary" href="/crm?new=1&lead={{ lead.id }}">Nova oportunidade</a><button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#convert-{{ lead.id }}" aria-expanded="false" aria-controls="convert-{{ lead.id }}">Converter</button><form method="post" action="/crm/leads/{{ lead.id }}/discard" data-confirm="Descartar este lead?"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Descartar</button></form></div>{% elif lead.status == 'converted' %}<a class="btn btn-sm btn-outline-primary" href="/crm?new=1&lead={{ lead.id }}">Nova oportunidade</a>{% endif %}</td></tr>
+    {% if lead.status == 'open' %}
+    <tr class="collapse" id="convert-{{ lead.id }}"><td colspan="5"><form method="post" action="/crm/leads/{{ lead.id }}/convert" class="row g-2 align-items-end"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="col-md-3"><label class="form-label" for="convert-type-{{ lead.id }}">Tipo de pessoa</label><select class="form-select" id="convert-type-{{ lead.id }}" name="person_type"><option value="company" {% if lead.company %}selected{% endif %}>Pessoa jurídica</option><option value="individual" {% if not lead.company %}selected{% endif %}>Pessoa física</option></select></div>
+      <div class="col-md-5"><label class="form-label" for="convert-tax-{{ lead.id }}">CPF/CNPJ <small class="text-secondary fw-normal">(opcional)</small></label><input class="form-control" id="convert-tax-{{ lead.id }}" name="tax_id" maxlength="20" inputmode="numeric"></div>
+      <div class="col-md-4"><button class="btn btn-success w-100" type="submit">Converter em cliente</button></div></form></td></tr>
+    {% endif %}
+    {% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>♙</span><strong>Nenhum lead encontrado</strong><small>{% if search or status %}Nenhum lead corresponde aos filtros.{% else %}Cadastre o primeiro contato comercial.{% endif %}</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="lead-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="lead-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">CRM</span><h2 id="lead-drawer-title">Novo lead</h2><p>Só o nome é obrigatório.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="/crm/leads" class="movement-drawer-form" data-movement-form>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="drawer-form-fields">
+      <div><label class="form-label" for="lead-name">Nome</label><input class="form-control" id="lead-name" name="name" maxlength="160" value="{{ form.get('name','') }}" required></div>
+      <div><label class="form-label" for="lead-company">Empresa</label><input class="form-control" id="lead-company" name="company" maxlength="160" value="{{ form.get('company','') }}"></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="lead-email">E-mail</label><input class="form-control" id="lead-email" name="email" type="email" maxlength="254" value="{{ form.get('email','') }}"></div><div><label class="form-label" for="lead-phone">Telefone</label><input class="form-control" id="lead-phone" name="phone" maxlength="40" value="{{ form.get('phone','') }}"></div></div>
+      <div><label class="form-label" for="lead-source">Origem</label><input class="form-control" id="lead-source" name="source" maxlength="60" value="{{ form.get('source','') }}" placeholder="Indicação, Instagram, site..."></div>
+      <div><label class="form-label" for="lead-notes">Observações</label><textarea class="form-control" id="lead-notes" name="notes" rows="3" maxlength="2000">{{ form.get('notes','') }}</textarea></div>
+    </div>
+    <div class="movement-drawer-footer"><span>O lead não entra no cadastro de clientes até ser convertido.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">Adicionar lead</button></div></div>
+  </form>
+</aside>
+{% endblock %}

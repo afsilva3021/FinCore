@@ -10,6 +10,13 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fincore.application.counterparties import save_counterparty
+from fincore.application.crm import (
+    add_activity,
+    convert_lead,
+    create_opportunity,
+    move_opportunity,
+    save_lead,
+)
 from fincore.application.finance import (
     create_account,
     create_category,
@@ -29,6 +36,7 @@ from fincore.application.sales import confirm_sales_order, create_sales_order, i
 from fincore.application.titles import create_titles, settle_title
 from fincore.infrastructure.models import (
     Membership,
+    PipelineStage,
     PurchaseOrderItem,
     UnitOfMeasure,
     User,
@@ -319,4 +327,69 @@ async def seed_demo(today: date | None = None) -> str:
     waiting = await demo_sale([("PAO-QUEIJO", "3", "0"), ("SUCO-LARANJA", "4", "0")])
     await confirm_sales_order(organization, waiting.id)
     await demo_sale([("SONHO-CREME", "30", "15.00")], valid_until=today + timedelta(days=7))
+    # CRM: leads e oportunidades em etapas diferentes do funil.
+    stages = {stage.name: stage for stage in await PipelineStage.filter(organization=organization)}
+
+    async def demo_opportunity(title, value, stage, days, **party):
+        opportunity = await create_opportunity(
+            organization=organization,
+            user=owner,
+            title=title,
+            expected_value=Decimal(value),
+            expected_close=today + timedelta(days=days),
+            **party,
+        )
+        if stage != "Novo":
+            await move_opportunity(
+                organization=organization,
+                user=owner,
+                opportunity_id=opportunity.id,
+                stage_id=stages[stage].id,
+                lost_reason="Fechou com outro fornecedor" if stage == "Perdido" else "",
+            )
+        return opportunity
+
+    school = await save_lead(
+        organization=organization,
+        user=owner,
+        name="Paula Mendes",
+        company="Colégio Exemplo",
+        email="paula@colegio.example",
+        source="Indicação",
+    )
+    cafe = await save_lead(
+        organization=organization,
+        user=owner,
+        name="Rui Castro",
+        company="Cafeteria Exemplo",
+        phone="(11) 5555-0100",
+        source="Instagram",
+    )
+    await save_lead(organization=organization, user=owner, name="Hotel Exemplo", source="Site")
+    lunch = await demo_opportunity(
+        "Lanche da cantina", "3200.00", "Proposta", 12, lead_id=school.id
+    )
+    await demo_opportunity("Pães para o café da manhã", "1800.00", "Novo", 20, lead_id=cafe.id)
+    await demo_opportunity(
+        "Coffee break mensal", "2400.00", "Negociação", 6, counterparty_id=customer.id
+    )
+    await demo_opportunity("Festa de fim de ano", "950.00", "Ganho", 1, counterparty_id=customer.id)
+    await convert_lead(organization=organization, lead_id=cafe.id, person_type="company")
+    await demo_opportunity("Bolos para vitrine", "600.00", "Perdido", 3, lead_id=cafe.id)
+    await add_activity(
+        organization=organization,
+        user=owner,
+        kind="meeting",
+        subject="Degustação com a coordenação",
+        due_on=today + timedelta(days=2),
+        opportunity_id=lunch.id,
+    )
+    await add_activity(
+        organization=organization,
+        user=owner,
+        kind="call",
+        subject="Confirmar quantidade semanal",
+        due_on=today - timedelta(days=1),
+        opportunity_id=lunch.id,
+    )
     return DEMO_EMAIL

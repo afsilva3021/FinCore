@@ -43,6 +43,10 @@ As páginas HTML são a interface principal do FinCore. Os formulários fazem va
 - `POST /sales/:order_id/confirm`, `/cancel` — confirma o orçamento como pedido ou cancela antes do faturamento.
 - `POST /sales/:order_id/invoices` — fatura o pedido inteiro (`issued_on`, `operation_key`): baixa estoque, gera contas a receber e lança receita e custo.
 - `POST /sales/invoices/:invoice_id/reverse` — devolução total: estorna o faturamento.
+- `GET /crm` — quadro do funil, indicadores e próximas atividades; `POST /crm/opportunities` cria oportunidade para um lead (`lead_id`) ou cliente (`counterparty_id`).
+- `GET /crm/opportunities/:opportunity_id` — detalhe, histórico de etapas e atividades; `POST .../stage` muda a etapa (`stage_id`, `lost_reason`); `POST .../activities` registra atividade.
+- `POST /crm/activities/:activity_id/done` — conclui a atividade.
+- `GET /crm/leads`, `POST /crm/leads` — leads; `POST /crm/leads/:lead_id/convert` (`person_type`, `tax_id`) converte em cliente; `POST /crm/leads/:lead_id/discard` descarta.
 
 Sessões usam cookie assinado, HttpOnly e SameSite=Lax; formulários de alteração de estado validam token CSRF.
 
@@ -90,8 +94,9 @@ As rotas JSON usam o mesmo cookie de sessão assinado das páginas. Listas sempr
 | GET | `/api/v1/purchase-orders/{id}` | UUID do pedido | Pedido com `items[]` (`quantity`, `unit_cost`, `received_quantity`) ou 404 |
 | GET | `/api/v1/sales-orders` | `limit`, `offset`, `status` | `{items:[pedido com itens e total],limit,offset,total}` |
 | GET | `/api/v1/sales-orders/{id}` | UUID do pedido | Pedido com `items[]` (`quantity`, `unit_price`, `discount`, `total`) ou 404 |
+| GET | `/api/v1/crm/opportunities` | `limit`, `offset` | `{items:[{id,title,stage:{id,name,kind},party,lead_id,counterparty_id,expected_value,expected_close,lost_reason,sales_order_id}],limit,offset,total}` |
 
-A especificação OpenAPI 3.1 dos endpoints de títulos, produtos, estoque, compras, vendas e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
+A especificação OpenAPI 3.1 dos endpoints de títulos, produtos, estoque, compras, vendas, CRM e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
 
 ### Sessão, CSRF e escrita
 
@@ -157,4 +162,4 @@ O cadastro recebe contraparte, descrição, valor total, emissão/vencimento ini
 
 ## Autorização por perfil
 
-Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que confere o perfil contra a área da rota (exceto `/login`, `/register` e `/logout`). Rotas de cadastros de produto (`/products`, `/product-settings`, `/api/v1/products`) e de estoque (`/stock`, `/api/v1/stock`) exigem `owner` ou `stock`; compras (`/purchases`, `/api/v1/purchase-orders`) exigem `owner` ou `purchasing`; vendas (`/sales`, `/api/v1/sales-orders`) exigem `owner` ou `sales`; contatos (`/contacts`) aceitam `owner`, `finance`, `purchasing` e `sales`; todas as outras exigem `owner` ou `finance`. Perfil `viewer` e perfis de outra área recebem `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.
+Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que confere o perfil contra a área da rota (exceto `/login`, `/register` e `/logout`). Rotas de cadastros de produto (`/products`, `/product-settings`, `/api/v1/products`) e de estoque (`/stock`, `/api/v1/stock`) exigem `owner` ou `stock`; compras (`/purchases`, `/api/v1/purchase-orders`) exigem `owner` ou `purchasing`; vendas e CRM (`/sales`, `/api/v1/sales-orders`, `/crm`, `/api/v1/crm`) exigem `owner` ou `sales`; contatos (`/contacts`) aceitam `owner`, `finance`, `purchasing` e `sales`; todas as outras exigem `owner` ou `finance`. Perfil `viewer` e perfis de outra área recebem `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.
