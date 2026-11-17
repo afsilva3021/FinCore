@@ -287,3 +287,36 @@ Segunda fase do roteiro em [erp-roadmap.md](erp-roadmap.md). Compras e vendas ai
 - [ ] As etapas do funil são fixas: ainda não há tela para criar, renomear ou reordenar etapas.
 - [ ] O quadro não tem arrastar e soltar; a etapa muda pela página da oportunidade.
 - [ ] Atividades de lead só pelo caso de uso (a tela registra atividades em oportunidades); o responsável é sempre quem criou a oportunidade.
+
+## ERP fase 13 — fiscal simulado (2026-11-17)
+
+**Simulação, sem valor fiscal.** Não gera XML, não assina e não transmite à SEFAZ.
+
+- [x] Modelos `TaxProfile`, `FiscalDocument` e `FiscalDocumentItem`; migration `0024` aditiva, aplicada em banco limpo (0001→0024) e no banco de teste.
+- [x] Perfis tributários com CFOP de saída, CST/CSOSN e alíquotas de ICMS, PIS e COFINS informados pelo usuário; só o formato é conferido. Sem perfil cadastrado, o primeiro documento usa um perfil de exemplo (CFOP 5102, CSOSN 102, alíquotas zero).
+- [x] Documento gerado a partir de um faturamento efetivado, com cópia dos itens (descrição, NCM, unidade, quantidade, preço) e impostos destacados "por dentro". O total do documento é igual ao do faturamento.
+- [x] Numeração por série, sem buracos nem repetição: 8 emissões simultâneas recebem os números de 1 a 8; emissão recusada não gasta número; documento cancelado mantém o número.
+- [x] No máximo um documento emitido por faturamento (regra na aplicação e índice único parcial); reenvio com a mesma chave não duplica.
+- [x] Cancelamento com motivo de pelo menos 15 caracteres. O faturamento só pode ser estornado depois de cancelar o documento dele.
+- [x] O documento não altera estoque, financeiro nem contabilidade (conferido no teste).
+- [x] Páginas `/fiscal` (documentos e perfis) e `/fiscal/{id}`, botão "Gerar documento" no pedido de venda; API de consulta `/api/v1/fiscal/documents`. Todas as telas e a API trazem o aviso de simulação (`"simulated": true`).
+- [x] Área de escrita `fiscal` para Proprietário, Financeiro e Vendas.
+- [x] Isolamento: 4 tentativas e 2 listagens novas. Seed com um perfil e um documento.
+- [x] Fluxo real no Chrome: gerar documento pelo pedido, estorno do faturamento barrado, cancelamento com motivo, estorno liberado; e as 22 páginas do menu respondendo 200.
+- [x] Ruff e suíte completa aprovados: 296 testes (182 unitários, 114 de integração), também com o usuário restrito do banco.
+- [ ] Diferenças em relação ao roteiro: só documentos de saída (venda); não há documento de entrada para compras nem estado de rascunho.
+- [ ] O cálculo é valor do item × alíquota. Não há base reduzida, substituição tributária, DIFAL, IPI, Simples Nacional por faixa nem qualquer regra da legislação.
+- [ ] Não validado neste ambiente, em nenhuma fase: `docker compose up --build` (sem Docker) e o job `docker` do CI.
+
+## Estado geral depois das fases 8 a 13 (2026-11-17)
+
+O roteiro de `docs/erp-roadmap.md` está implementado: cadastros de produto, estoque, compras, vendas, CRM e fiscal simulado, sobre o núcleo financeiro e contábil que já existia. Pendências conhecidas, por ordem de impacto para o uso real:
+
+1. Validar a subida em Docker (`docker compose up --build`) e o CI no GitHub.
+2. Faturamento e devolução parciais em vendas; edição de pedidos em rascunho (compras e vendas).
+3. Reserva de estoque na confirmação do pedido de venda.
+4. Compra de itens sem controle de estoque (despesas) pelo pedido de compra.
+5. Configuração das etapas do funil e arrastar e soltar no quadro do CRM.
+6. Relatórios gerenciais do ERP (vendas por período, margem, giro de estoque); os relatórios atuais são só financeiros e em regime de caixa.
+7. API de escrita para compras, vendas e CRM (hoje só consulta).
+8. Emissão fiscal real, que depende de provedor, certificado e requisitos próprios.

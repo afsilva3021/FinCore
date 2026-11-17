@@ -47,6 +47,10 @@ As páginas HTML são a interface principal do FinCore. Os formulários fazem va
 - `GET /crm/opportunities/:opportunity_id` — detalhe, histórico de etapas e atividades; `POST .../stage` muda a etapa (`stage_id`, `lost_reason`); `POST .../activities` registra atividade.
 - `POST /crm/activities/:activity_id/done` — conclui a atividade.
 - `GET /crm/leads`, `POST /crm/leads` — leads; `POST /crm/leads/:lead_id/convert` (`person_type`, `tax_id`) converte em cliente; `POST /crm/leads/:lead_id/discard` descarta.
+- `GET /fiscal` — documentos fiscais simulados e perfis tributários; `POST /fiscal/tax-profiles` cadastra perfil (`name`, `cfop`, `icms_cst`, `icms_rate`, `pis_rate`, `cofins_rate`); `POST /fiscal/tax-profiles/:profile_id/active` inativa ou reativa.
+- `POST /fiscal/documents` — gera o documento simulado de um faturamento (`sales_invoice_id`, `operation_key`, `tax_profile_id` opcional).
+- `GET /fiscal/:document_id` — documento com itens e impostos destacados; `POST /fiscal/:document_id/cancel` cancela com `reason` (mínimo 15 caracteres).
+- **Simulação:** estas rotas não geram XML, não assinam nem transmitem nada à SEFAZ.
 
 Sessões usam cookie assinado, HttpOnly e SameSite=Lax; formulários de alteração de estado validam token CSRF.
 
@@ -95,8 +99,9 @@ As rotas JSON usam o mesmo cookie de sessão assinado das páginas. Listas sempr
 | GET | `/api/v1/sales-orders` | `limit`, `offset`, `status` | `{items:[pedido com itens e total],limit,offset,total}` |
 | GET | `/api/v1/sales-orders/{id}` | UUID do pedido | Pedido com `items[]` (`quantity`, `unit_price`, `discount`, `total`) ou 404 |
 | GET | `/api/v1/crm/opportunities` | `limit`, `offset` | `{items:[{id,title,stage:{id,name,kind},party,lead_id,counterparty_id,expected_value,expected_close,lost_reason,sales_order_id}],limit,offset,total}` |
+| GET | `/api/v1/fiscal/documents` | `limit`, `offset` | `{simulated:true,notice,items:[{id,simulated:true,number,status,issued_on,sales_invoice_id,customer,cfop,total,total_icms,total_pis,total_cofins,cancel_reason}],limit,offset,total}` — documentos **sem valor fiscal** |
 
-A especificação OpenAPI 3.1 dos endpoints de títulos, produtos, estoque, compras, vendas, CRM e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
+A especificação OpenAPI 3.1 dos endpoints de títulos, produtos, estoque, compras, vendas, CRM, fiscal simulado e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
 
 ### Sessão, CSRF e escrita
 
@@ -162,4 +167,4 @@ O cadastro recebe contraparte, descrição, valor total, emissão/vencimento ini
 
 ## Autorização por perfil
 
-Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que confere o perfil contra a área da rota (exceto `/login`, `/register` e `/logout`). Rotas de cadastros de produto (`/products`, `/product-settings`, `/api/v1/products`) e de estoque (`/stock`, `/api/v1/stock`) exigem `owner` ou `stock`; compras (`/purchases`, `/api/v1/purchase-orders`) exigem `owner` ou `purchasing`; vendas e CRM (`/sales`, `/api/v1/sales-orders`, `/crm`, `/api/v1/crm`) exigem `owner` ou `sales`; contatos (`/contacts`) aceitam `owner`, `finance`, `purchasing` e `sales`; todas as outras exigem `owner` ou `finance`. Perfil `viewer` e perfis de outra área recebem `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.
+Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que confere o perfil contra a área da rota (exceto `/login`, `/register` e `/logout`). Rotas de cadastros de produto (`/products`, `/product-settings`, `/api/v1/products`) e de estoque (`/stock`, `/api/v1/stock`) exigem `owner` ou `stock`; compras (`/purchases`, `/api/v1/purchase-orders`) exigem `owner` ou `purchasing`; vendas e CRM (`/sales`, `/api/v1/sales-orders`, `/crm`, `/api/v1/crm`) exigem `owner` ou `sales`; fiscal simulado (`/fiscal`, `/api/v1/fiscal`) aceita `owner`, `finance` e `sales`; contatos (`/contacts`) aceitam `owner`, `finance`, `purchasing` e `sales`; todas as outras exigem `owner` ou `finance`. Perfil `viewer` e perfis de outra área recebem `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.

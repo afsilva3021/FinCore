@@ -1,6 +1,6 @@
 # FinCore
 
-FinCore é um ERP para comércio em construção, em português (pt-BR): o núcleo financeiro e contábil está completo e os módulos de produtos, estoque, compras, vendas, CRM e fiscal simulado entram por fases ([roteiro](docs/erp-roadmap.md)). Hoje, além do financeiro, existem os cadastros de produto, o controle de estoque, as compras, as vendas e o CRM. A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
+FinCore é um ERP para comércio (venda de produtos), em português (pt-BR): financeiro e contabilidade, cadastros de produto, estoque, compras, vendas, CRM e um módulo fiscal **apenas simulado**. Os módulos de ERP foram construídos em fases sobre o núcleo financeiro ([roteiro](docs/erp-roadmap.md)). A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
 
 Este README serve como visão de produto e guia reproduzível para desenvolvedores e agentes de código. Leia também [AGENTS.md](AGENTS.md), que define invariantes e o fluxo obrigatório de implementação, e `docs/`, que contém contratos e decisões detalhados.
 
@@ -35,6 +35,8 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 | Histórico de movimentações com estorno | Pedido de compra com recebimento parcial (ERP, fase 10) |
 | ![Pedido de venda faturado](docs/screenshots/13-pedido-de-venda.png) | ![Funil do CRM](docs/screenshots/14-crm-funil.png) |
 | Pedido de venda faturado, com margem (ERP, fase 11) | Funil de oportunidades do CRM (ERP, fase 12) |
+| ![Documento fiscal simulado](docs/screenshots/15-documento-fiscal-simulado.png) | |
+| Documento fiscal simulado, sem valor fiscal (ERP, fase 13) | |
 
 As telas usam a organização fictícia criada por `fincore-seed-demo`.
 </details>
@@ -49,8 +51,9 @@ O Robyn é um framework web Python com servidor em Rust, assíncrono e com pouca
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0023`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
-- Transformação em ERP em andamento: fases 8 (cadastros de produto), 9 (estoque), 10 (compras), 11 (vendas) e 12 (CRM) concluídas; o fiscal simulado ainda **não** existe. Situação por fase em [docs/erp-roadmap.md](docs/erp-roadmap.md).
+- Migrations versionadas até `0024`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- As seis fases de ERP do roteiro (cadastros de produto, estoque, compras, vendas, CRM e fiscal simulado) estão implementadas. O que foi simplificado em cada uma e o que falta está em [docs/progress.md](docs/progress.md), na seção "Estado geral depois das fases 8 a 13".
+- **Fiscal é só simulação:** o sistema não emite nota fiscal, não gera XML e não fala com a SEFAZ.
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
@@ -62,6 +65,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-17 | ERP fase 13: fiscal **simulado** — perfis tributários informados pelo usuário e documento fiscal interno gerado do faturamento, com numeração sem buracos, impostos destacados e cancelamento com motivo. Sem valor fiscal: não gera XML nem transmite à SEFAZ. Migration `0024`. |
 | 2026-11-17 | ERP fase 12: CRM — leads, conversão em cliente sem duplicar contato, funil de oportunidades com histórico de etapas, atividades, indicadores de conversão e orçamento gerado a partir da oportunidade. Migration `0023`. |
 | 2026-11-17 | ERP fase 11: vendas — orçamento, pedido e faturamento com baixa de estoque ao custo médio, contas a receber, receita e CMV por competência, devolução total, margem por venda, perfil **Vendas** e API de consulta `/api/v1/sales-orders`. Migration `0022`. Correção: o menu lateral abria o grupo errado nas páginas de detalhe. |
 | 2026-11-17 | ERP fase 10: compras — pedido de compra, recebimento total ou parcial com entrada em estoque, contas a pagar e lançamento por competência (estoque contra fornecedores), estorno de recebimento, perfil **Compras** e API de consulta `/api/v1/purchase-orders`. Títulos passam a ter origem (`manual`, `purchase`, `sale`). Migration `0021`. |
@@ -133,7 +137,7 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
   | Vendas | Cuidar do CRM, criar orçamentos e pedidos, faturar, estornar faturamento e cadastrar clientes; só consulta o restante |
   | Somente leitura | Consultar telas e relatórios; nenhuma alteração |
 
-  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. Cada rota pertence a uma área de escrita (financeiro, contatos, cadastros de produto, estoque, compras, vendas ou CRM) e cada perfil altera só as suas áreas; uma rota ainda não classificada conta como financeira. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
+  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. Cada rota pertence a uma área de escrita (financeiro, contatos, cadastros de produto, estoque, compras, vendas, CRM ou fiscal simulado) e cada perfil altera só as suas áreas; uma rota ainda não classificada conta como financeira. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
 - Cadastro próprio de clientes e fornecedores em `/customers` e `/suppliers`, com CPF/CNPJ, endereço, contato, inativação e reativação.
 - Consulta de endereço por CEP via ViaCEP, acionada pelo formulário de contato; os campos também podem ser preenchidos manualmente.
 
@@ -228,9 +232,20 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
 - O valor estimado é só uma estimativa: não entra no financeiro nem na contabilidade.
 - Limites desta fase: as etapas do funil são fixas e o quadro não tem arrastar e soltar.
 
+### Fiscal simulado (ERP, fase 13)
+
+> **Simulação, sem valor fiscal.** O FinCore não emite nota fiscal: não gera XML, não assina e não transmite nada à SEFAZ. O documento serve para conferência interna.
+
+- **Perfis tributários** em `/fiscal`: CFOP de saída, CST/CSOSN e alíquotas de ICMS, PIS e COFINS informados por você. Só o formato é conferido, não a legislação.
+- **Documento fiscal interno** gerado a partir de um faturamento de venda, pelo botão "Gerar documento" no pedido: copia os itens e destaca os impostos "por dentro" (valor do item × alíquota). O total é igual ao do faturamento.
+- Numeração por série, sem buracos nem repetição; um faturamento tem no máximo um documento emitido.
+- **Cancelamento** com motivo; o número não é reaproveitado. Um faturamento só pode ser estornado depois de cancelar o documento dele.
+- O documento não altera estoque, financeiro nem contabilidade.
+- Limites: só saídas (vendas); sem base reduzida, substituição tributária, DIFAL, IPI ou qualquer regra tributária real.
+
 ### API e demonstrações
 
-- API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias, transações (listar, consultar, criar, liquidar e estornar), títulos (listar, detalhar, cadastrar, baixar e cancelar), produtos (listar, detalhar e cadastrar), estoque (posição, movimentos, movimentar e estornar), pedidos de compra (consulta), pedidos de venda (consulta) e oportunidades do CRM (consulta), com paginação e isolamento por organização.
+- API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias, transações (listar, consultar, criar, liquidar e estornar), títulos (listar, detalhar, cadastrar, baixar e cancelar), produtos (listar, detalhar e cadastrar), estoque (posição, movimentos, movimentar e estornar), pedidos de compra (consulta), pedidos de venda (consulta), oportunidades do CRM (consulta) e documentos fiscais simulados (consulta), com paginação e isolamento por organização.
 - `/integrations` permite executar simuladores locais de Pix, boleto, cartão, webhook e Open Finance.
 - Contratos e rotas: [docs/api.md](docs/api.md). Limites de integrações: [docs/external-integrations.md](docs/external-integrations.md).
 
@@ -262,6 +277,8 @@ Os modelos Tortoise estão em `src/fincore/infrastructure/models.py`; migrations
 | `SalesOrder`, `SalesOrderItem` | Orçamento/pedido de venda numerado e seus itens (quantidade, preço e desconto) |
 | `PipelineStage`, `Lead` | Etapa do funil (aberta, ganha ou perdida) e contato comercial que ainda não é cliente |
 | `Opportunity`, `OpportunityStageChange`, `CrmActivity` | Negociação com lead ou cliente, histórico de mudanças de etapa e atividades |
+| `TaxProfile` | Dados tributários informados para a simulação fiscal (CFOP, CST/CSOSN, alíquotas) |
+| `FiscalDocument`, `FiscalDocumentItem` | Documento fiscal **simulado** de um faturamento, com cópia dos itens e impostos destacados; sem valor fiscal |
 | `SalesInvoice`, `SalesInvoiceItem` | Faturamento interno: liga o pedido às saídas de estoque, aos títulos a receber e aos lançamentos de receita e custo; guarda o custo de cada item e pode ser estornado |
 
 As regras contábeis, estados e invariantes estão detalhados em [docs/accounting.md](docs/accounting.md), [docs/requirements.md](docs/requirements.md) e [AGENTS.md](AGENTS.md). Não criar um campo de saldo editável como fonte da verdade; derive valores realizados dos movimentos/diário. Datas de competência, vencimento e liquidação representam conceitos diferentes.

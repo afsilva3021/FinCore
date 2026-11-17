@@ -49,3 +49,6 @@
 - **CRM sobre o cadastro existente (fase 12):** lead é um registro próprio e só vira `Counterparty` na conversão; a deduplicação é pelo CPF/CNPJ, único por organização. Não há segundo cadastro de clientes.
 - **Situação da oportunidade vem da etapa:** `PipelineStage.kind` (`open`/`won`/`lost`) define se está em andamento, ganha ou perdida; não existe campo de status separado para divergir.
 - **Etapas fixas nesta fase:** o funil padrão é criado por organização e já está em tabela própria, então permitir edição depois não exige migração de dados.
+- **Fiscal como simulação isolada (fase 13):** o documento fiscal é uma cópia somente leitura do faturamento com impostos ilustrativos; não lança em estoque, financeiro ou diário. Emissão real fica fora de escopo até existir provedor, certificado e requisitos validados.
+- **Número fiscal não é reaproveitado:** o cancelamento mantém o número; para corrigir, gera-se outro documento com o número seguinte.
+- **Estorno de faturamento exige cancelar o documento antes:** evita um documento "emitido" apontando para uma venda desfeita.

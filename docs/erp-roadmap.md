@@ -1,6 +1,6 @@
 # FinCore ERP — roteiro de transformação
 
-> **Situação: aprovado em 2026-11-17.** Fases 8 a 12 concluídas; fase 13 pendente. Cada fase segue o fluxo do `AGENTS.md` (regra, testes, migration, documentação) e o que foi validado fica em `docs/progress.md`.
+> **Situação: aprovado em 2026-11-17 e implementado.** Fases 8 a 13 concluídas. As diferenças em relação ao que foi planejado estão anotadas em cada fase; as pendências estão em `docs/progress.md`. Cada fase segue o fluxo do `AGENTS.md` (regra, testes, migration, documentação) e o que foi validado fica em `docs/progress.md`.
 
 ## 1. Objetivo e escopo
 
@@ -15,7 +15,7 @@ Módulos novos, na ordem de entrega:
 | 10 | Compras ✅ | Pedido de compra → recebimento → estoque + contas a pagar |
 | 11 | Vendas ✅ | Orçamento → pedido → faturamento → baixa de estoque + contas a receber |
 | 12 | CRM ✅ | Leads, funil de oportunidades e atividades ligados a vendas |
-| 13 | Fiscal (simulado) | Documento fiscal interno com dados tributários, sem SEFAZ |
+| 13 | Fiscal (simulado) ✅ | Documento fiscal interno com dados tributários, sem SEFAZ |
 
 As fases 1 a 7 do `AGENTS.md` (fundação até integrações simuladas) continuam como estão.
 
@@ -118,7 +118,9 @@ Implementado com funil padrão fixo (sem tela de configuração de etapas) e qua
 
 Aceite: funil em quadro e em lista; histórico de mudanças de etapa; conversão de lead não duplica contato com mesmo CPF/CNPJ; indicadores de conversão conferidos por consulta de referência.
 
-### Fase 13 — Fiscal (simulado)
+### Fase 13 — Fiscal simulado (concluída)
+
+Implementado só para saídas (vendas), sem documento de entrada e sem estado de rascunho.
 
 - `TaxProfile`: regras informadas (CFOP, CST/CSOSN, alíquotas) por operação.
 - `FiscalDocument` e itens: gerado a partir do faturamento ou do recebimento, com numeração e série internas e totais por imposto. Estados: rascunho → emitido (simulado) → cancelado.
@@ -145,4 +147,4 @@ Aceite: totais do documento batem com o faturamento; numeração sem buracos nem
 
 **Fase 10 (compras):** pedido de compra, recebimento total ou parcial com entrada em estoque (motivo `purchase`) e títulos a pagar lançados por competência (D Estoque / C Fornecedores). Concluída.
 
-**Fase 13 (fiscal simulado):** documento fiscal interno gerado do faturamento, com dados tributários informados e sem SEFAZ.
+Roteiro concluído. As próximas melhorias estão listadas em `docs/progress.md`, na seção "Estado geral depois das fases 8 a 13".

@@ -237,6 +237,28 @@ components:
         expected_close: {type: [string, "null"], format: date}
         lost_reason: {type: [string, "null"]}
         sales_order_id: {type: [string, "null"], format: uuid}
+    FiscalDocument:
+      type: object
+      description: Documento fiscal SIMULADO, sem valor fiscal. Não é nota fiscal.
+      properties:
+        id: {type: string, format: uuid}
+        simulated: {type: boolean, const: true}
+        notice: {type: string, examples: ["SIMULAÇÃO — SEM VALOR FISCAL"]}
+        number: {type: string, examples: ["1/000001"]}
+        status: {type: string, enum: [issued, cancelled]}
+        issued_on: {type: string, format: date}
+        sales_invoice_id: {type: string, format: uuid}
+        customer:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+        cfop: {type: string, examples: ["5102"]}
+        total: {$ref: '#/components/schemas/Money'}
+        total_icms: {$ref: '#/components/schemas/Money'}
+        total_pis: {$ref: '#/components/schemas/Money'}
+        total_cofins: {$ref: '#/components/schemas/Money'}
+        cancel_reason: {type: [string, "null"]}
     Title:
       type: object
       properties:
@@ -553,6 +575,28 @@ paths:
                 type: object
                 properties:
                   items: {type: array, items: {$ref: '#/components/schemas/Opportunity'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/fiscal/documents:
+    get:
+      summary: Lista documentos fiscais simulados (sem valor fiscal)
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        "200":
+          description: Documentos simulados, do número mais alto para o mais baixo.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  simulated: {type: boolean, const: true}
+                  notice: {type: string}
+                  items: {type: array, items: {$ref: '#/components/schemas/FiscalDocument'}}
                   limit: {type: integer}
                   offset: {type: integer}
                   total: {type: integer}

@@ -17,6 +17,7 @@ from fincore.presentation.routes import (
     register_crm_routes,
     register_demo_integration_routes,
     register_finance_routes,
+    register_fiscal_routes,
     register_inventory_routes,
     register_member_routes,
     register_product_routes,
@@ -82,6 +83,7 @@ register_inventory_routes(app)
 register_purchase_routes(app)
 register_sales_routes(app)
 register_crm_routes(app)
+register_fiscal_routes(app)
 register_finance_routes(app)
 register_accounting_routes(app)
 register_reconciliation_routes(app)

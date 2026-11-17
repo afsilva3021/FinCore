@@ -23,6 +23,7 @@ from fincore.application.finance import (
     create_movement,
     create_transfer,
 )
+from fincore.application.fiscal import issue_fiscal_document, save_tax_profile
 from fincore.application.identity import register_user
 from fincore.application.inventory import register_stock_movement, transfer_stock
 from fincore.application.members import add_member
@@ -317,12 +318,29 @@ async def seed_demo(today: date | None = None) -> str:
         notes="Coffee break da reunião mensal",
     )
     await confirm_sales_order(organization, invoiced.id)
-    await invoice_sales_order(
+    demo_invoice, _ = await invoice_sales_order(
         organization=organization,
         user=owner,
         order_id=invoiced.id,
         operation_key=uuid4(),
         issued_on=today,
+    )
+    # Fiscal simulado: perfil de exemplo e um documento interno, sem valor fiscal.
+    demo_profile = await save_tax_profile(
+        organization=organization,
+        name="Venda no estado (exemplo)",
+        cfop="5102",
+        icms_cst="102",
+        icms_rate=Decimal("0"),
+        pis_rate=Decimal("0.65"),
+        cofins_rate=Decimal("3"),
+    )
+    await issue_fiscal_document(
+        organization=organization,
+        user=owner,
+        sales_invoice_id=demo_invoice.id,
+        operation_key=uuid4(),
+        tax_profile_id=demo_profile.id,
     )
     waiting = await demo_sale([("PAO-QUEIJO", "3", "0"), ("SUCO-LARANJA", "4", "0")])
     await confirm_sales_order(organization, waiting.id)

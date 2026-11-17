@@ -1,0 +1,37 @@
+{% extends "finance/layout.html" %}
+{% block title %}Documento {{ number }} (simulação) · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">FISCAL · SIMULAÇÃO</span><h1>Documento {{ number }} <span class="badge {{ 'text-bg-warning' if document.status == 'issued' else 'text-bg-secondary' }} align-middle fs-6">{{ status_labels[document.status] }}</span></h1><p>{{ document.customer.trade_name or document.customer.name }}{% if document.customer.tax_id %} · {{ document.customer.tax_id|format_tax_id }}{% endif %} · {{ document.issued_on.strftime('%d/%m/%Y') }}</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/fiscal">Voltar</a><a class="btn btn-outline-primary" href="/sales/{{ document.sales_invoice.order.id }}">Ver pedido PV-{{ '%05d'|format(document.sales_invoice.order.number) }}</a></div>
+</div>
+<div class="alert alert-warning" role="note"><strong>{{ notice }}.</strong> Documento interno para conferência. Não é nota fiscal, não foi transmitido à SEFAZ e não substitui a emissão no seu sistema emissor.</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% if document.status == 'cancelled' %}<div class="alert alert-secondary" role="status"><strong>Cancelado.</strong> Motivo: {{ document.cancel_reason }}</div>{% endif %}
+<section class="title-summary" aria-label="Totais do documento">
+  <article class="title-summary-card"><span>Total dos produtos</span><strong>R$ {{ document.total_products|brl }}</strong><small>igual ao faturamento {{ document.sales_invoice.number }}</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>ICMS destacado</span><strong>R$ {{ document.total_icms|brl }}</strong><small>{{ document.tax_profile.icms_rate|brl }}% · CST/CSOSN {{ document.tax_profile.icms_cst }}</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>PIS + COFINS</span><strong>R$ {{ (document.total_pis + document.total_cofins)|brl }}</strong><small>{{ document.tax_profile.pis_rate|brl }}% + {{ document.tax_profile.cofins_rate|brl }}%</small></article>
+</section>
+<article class="panel-card transactions-table-card mb-3">
+  <div class="panel-heading"><div><h3>Itens</h3><p>Perfil tributário: {{ document.tax_profile.name }}. Os impostos são destacados "por dentro" e não aumentam o total.</p></div></div>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>#</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th class="text-end">Quantidade</th><th class="text-end">Preço</th><th class="text-end">Total</th><th class="text-end">ICMS</th><th class="text-end">PIS</th><th class="text-end">COFINS</th></tr></thead><tbody>
+    {% for item in items %}
+    <tr><td>{{ item.position }}</td><td><strong>{{ item.description }}</strong></td><td>{{ item.ncm or '—' }}</td><td>{{ item.cfop }}</td>
+      <td class="text-end text-nowrap">{{ item.quantity|quantity }} {{ item.unit }}</td><td class="text-end text-nowrap">R$ {{ item.unit_price|brl }}</td><td class="text-end text-nowrap">R$ {{ item.total|brl }}</td>
+      <td class="text-end text-nowrap">R$ {{ item.icms_amount|brl }}</td><td class="text-end text-nowrap">R$ {{ item.pis_amount|brl }}</td><td class="text-end text-nowrap">R$ {{ item.cofins_amount|brl }}</td></tr>
+    {% endfor %}
+  </tbody></table></div>
+</article>
+{% if document.status == 'issued' %}
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Cancelar documento</h3><p>O número continua usado e não é reaproveitado. Depois de cancelar, o faturamento pode gerar outro documento ou ser estornado.</p></div></div>
+  <form method="post" action="/fiscal/{{ document.id }}/cancel" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-md-9"><label class="form-label" for="cancel-reason">Motivo (mínimo 15 caracteres)</label><input class="form-control" id="cancel-reason" name="reason" maxlength="240" value="{{ reason }}" required></div>
+    <div class="col-md-3"><button class="btn btn-outline-danger w-100" type="submit">Cancelar documento</button></div>
+  </form>
+</article>
+{% endif %}
+{% endblock %}

@@ -913,3 +913,86 @@ class CrmActivity(Model):
         "models.Opportunity", related_name="activities", null=True, on_delete=fields.CASCADE
     )
     created_at = fields.DatetimeField(auto_now_add=True)
+
+
+# --- Fiscal simulado (ERP, fase 13) -----------------------------------------------------
+# Nada aqui tem valor fiscal: não há XML, assinatura nem transmissão à SEFAZ.
+
+
+class TaxProfile(Model):
+    """Dados tributários informados pelo usuário para a simulação (não são conferidos)."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="tax_profiles", on_delete=fields.CASCADE
+    )
+    name = fields.CharField(max_length=80)
+    cfop = fields.CharField(max_length=4)
+    # CST (2 dígitos) ou CSOSN (3 dígitos) do ICMS.
+    icms_cst = fields.CharField(max_length=3)
+    icms_rate = fields.DecimalField(max_digits=5, decimal_places=2, default=0)
+    pis_rate = fields.DecimalField(max_digits=5, decimal_places=2, default=0)
+    cofins_rate = fields.DecimalField(max_digits=5, decimal_places=2, default=0)
+    is_active = fields.BooleanField(default=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "name"),)
+
+
+class FiscalDocument(Model):
+    """Documento fiscal interno gerado de um faturamento. Simulação, sem valor fiscal."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="fiscal_documents", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_fiscal_documents", on_delete=fields.RESTRICT
+    )
+    number = fields.IntField()
+    series = fields.CharField(max_length=3, default="1")
+    sales_invoice = fields.ForeignKeyField(
+        "models.SalesInvoice", related_name="fiscal_documents", on_delete=fields.RESTRICT
+    )
+    tax_profile = fields.ForeignKeyField(
+        "models.TaxProfile", related_name="fiscal_documents", on_delete=fields.RESTRICT
+    )
+    customer = fields.ForeignKeyField(
+        "models.Counterparty", related_name="fiscal_documents", on_delete=fields.RESTRICT
+    )
+    issued_on = fields.DateField()
+    total_products = fields.DecimalField(max_digits=15, decimal_places=2)
+    total_icms = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    total_pis = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    total_cofins = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    status = fields.CharField(max_length=10, default="issued")
+    cancel_reason = fields.CharField(max_length=240, null=True)
+    cancelled_at = fields.DatetimeField(null=True)
+    operation_key = fields.UUIDField(unique=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "series", "number"),)
+
+
+class FiscalDocumentItem(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    document = fields.ForeignKeyField(
+        "models.FiscalDocument", related_name="items", on_delete=fields.CASCADE
+    )
+    position = fields.IntField()
+    product = fields.ForeignKeyField(
+        "models.Product", related_name="fiscal_items", on_delete=fields.RESTRICT
+    )
+    # Cópia dos dados no momento da emissão: o documento não muda se o cadastro mudar.
+    description = fields.CharField(max_length=160)
+    ncm = fields.CharField(max_length=8, null=True)
+    cfop = fields.CharField(max_length=4)
+    unit = fields.CharField(max_length=6)
+    quantity = fields.DecimalField(max_digits=15, decimal_places=4)
+    unit_price = fields.DecimalField(max_digits=15, decimal_places=2)
+    total = fields.DecimalField(max_digits=15, decimal_places=2)
+    icms_amount = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    pis_amount = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    cofins_amount = fields.DecimalField(max_digits=15, decimal_places=2, default=0)

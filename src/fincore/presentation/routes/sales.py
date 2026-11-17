@@ -14,6 +14,7 @@ from fincore.application.queries import (
     document_titles,
     get_sales_invoice,
     get_sales_order,
+    issued_fiscal_documents,
     sales_invoices,
     sales_order_items,
     sales_orders_query,
@@ -312,6 +313,10 @@ def register_sales_routes(app: object) -> None:
                 for invoice in invoices
             ],
             titles=titles,
+            fiscal_documents=await issued_fiscal_documents(
+                organization, [invoice.id for invoice in invoices]
+            ),
+            fiscal_keys={invoice.id: str(uuid4()) for invoice in invoices},
             invoice_key=invoice_key or str(uuid4()),
             status_labels=STATUS_LABELS,
             status_badges=STATUS_BADGES,

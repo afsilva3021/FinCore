@@ -44,7 +44,7 @@
 <article class="panel-card transactions-table-card">
   <div class="panel-heading"><div><h3>Faturamentos</h3><p>Faturamento interno, sem valor fiscal. Estornar devolve a mercadoria ao estoque e cancela as contas a receber.</p></div><span class="step-count">{{ invoices|length }} faturamento(s)</span></div>
   {% if invoices %}
-  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Nº</th><th>Data</th><th class="text-end">Venda</th><th class="text-end">Custo</th><th class="text-end">Margem</th><th>Contas a receber</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Nº</th><th>Data</th><th class="text-end">Venda</th><th class="text-end">Custo</th><th class="text-end">Margem</th><th>Contas a receber</th><th>Fiscal (simulação)</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
     {% for row in invoices %}
     <tr><td><strong>{{ row.invoice.number }}</strong><small class="d-block text-secondary">{{ row.invoice.created_by.full_name }}</small></td>
       <td>{{ row.invoice.issued_on.strftime('%d/%m/%Y') }}</td>
@@ -52,6 +52,7 @@
       <td class="text-end text-nowrap">R$ {{ row.invoice.cost_total|brl }}</td>
       <td class="text-end text-nowrap {{ 'amount-expense' if row.margin < 0 else 'amount-income' }}">R$ {{ row.margin|brl }}{% if row.margin_percent is not none %}<small class="d-block">{{ row.margin_percent|string|replace('.', ',') }}%</small>{% endif %}</td>
       <td>{% for title in titles[row.invoice.id] %}<small class="d-block text-nowrap">{{ title.due_date.strftime('%d/%m/%Y') }} · R$ {{ title.original_amount|brl }}{% if title.status == 'settled' %} · recebido{% elif title.status == 'partial' %} · recebido em parte{% elif title.status == 'cancelled' %} · cancelado{% endif %}</small>{% else %}—{% endfor %}</td>
+      <td>{% set fiscal = fiscal_documents.get(row.invoice.id) %}{% if fiscal %}<a class="btn btn-sm btn-outline-primary" href="/fiscal/{{ fiscal.id }}">Doc. {{ fiscal.series }}/{{ '%06d'|format(fiscal.number) }}</a>{% elif row.invoice.status == 'posted' %}<form method="post" action="/fiscal/documents"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="sales_invoice_id" value="{{ row.invoice.id }}"><input type="hidden" name="operation_key" value="{{ fiscal_keys[row.invoice.id] }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Gerar documento</button></form>{% else %}—{% endif %}</td>
       <td><span class="badge {{ 'text-bg-success' if row.invoice.status == 'posted' else 'text-bg-secondary' }}">{{ 'Efetivado' if row.invoice.status == 'posted' else 'Estornado' }}</span></td>
       <td>{% if row.invoice.status == 'posted' %}<form method="post" action="/sales/invoices/{{ row.invoice.id }}/reverse" data-confirm="Estornar este faturamento? A mercadoria volta ao estoque e as contas a receber dele são canceladas."><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-danger" type="submit">Estornar</button></form>{% endif %}</td>
     </tr>

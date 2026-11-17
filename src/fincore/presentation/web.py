@@ -33,6 +33,7 @@ from fincore.application.members import (
     AREA_CONTACTS,
     AREA_CRM,
     AREA_FINANCE,
+    AREA_FISCAL,
     AREA_INVENTORY,
     AREA_PURCHASING,
     AREA_SALES,
@@ -110,6 +111,8 @@ AREA_PATH_PREFIXES = {
     "/api/v1/sales-orders": AREA_SALES,
     "/crm": AREA_CRM,
     "/api/v1/crm": AREA_CRM,
+    "/fiscal": AREA_FISCAL,
+    "/api/v1/fiscal": AREA_FISCAL,
 }
 
 

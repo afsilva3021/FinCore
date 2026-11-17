@@ -21,6 +21,8 @@ from fincore.infrastructure.models import (
     FinancialAccount,
     FinancialTitle,
     FinancialTransaction,
+    FiscalDocument,
+    FiscalDocumentItem,
     ImportedStatementTransaction,
     JournalEntry,
     JournalEntryLine,
@@ -41,6 +43,7 @@ from fincore.infrastructure.models import (
     SalesOrderItem,
     StockBalance,
     StockMovement,
+    TaxProfile,
     TitleSettlement,
     UnitOfMeasure,
     User,
@@ -730,3 +733,47 @@ async def pending_activities(organization: Organization, *, limit: int = 10):
 
 async def get_activity(organization: Organization, activity_id: UUID) -> CrmActivity | None:
     return await CrmActivity.get_or_none(id=activity_id, organization=organization)
+
+
+# --- Fiscal simulado ------------------------------------------------------------------
+
+
+def fiscal_documents_query(organization: Organization, *, status: str = ""):
+    query = FiscalDocument.filter(organization=organization)
+    if status:
+        query = query.filter(status=status)
+    return query.select_related("customer", "tax_profile").order_by("-number")
+
+
+async def get_fiscal_document(
+    organization: Organization, document_id: UUID
+) -> FiscalDocument | None:
+    return (
+        await FiscalDocument.filter(id=document_id, organization=organization)
+        .select_related("customer", "tax_profile", "sales_invoice__order", "created_by")
+        .first()
+    )
+
+
+async def fiscal_document_items(document: FiscalDocument) -> list[FiscalDocumentItem]:
+    return await FiscalDocumentItem.filter(document=document).order_by("position")
+
+
+async def tax_profiles(organization: Organization, *, only_active: bool = False):
+    query = TaxProfile.filter(organization=organization)
+    if only_active:
+        query = query.filter(is_active=True)
+    return await query.order_by("created_at")
+
+
+async def issued_fiscal_documents(
+    organization: Organization, invoice_ids: Iterable[UUID]
+) -> dict[UUID, FiscalDocument]:
+    """Documento fiscal emitido (não cancelado) de cada faturamento, quando existe."""
+    ids = list(invoice_ids)
+    if not ids:
+        return {}
+    rows = await FiscalDocument.filter(
+        organization=organization, sales_invoice_id__in=ids, status="issued"
+    )
+    return {row.sales_invoice_id: row for row in rows}

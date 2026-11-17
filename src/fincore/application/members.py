@@ -32,21 +32,24 @@ AREA_PURCHASING = "purchasing"
 AREA_CONTACTS = "contacts"
 AREA_SALES = "sales"
 AREA_CRM = "crm"
+AREA_FISCAL = "fiscal"
+ALL_AREAS = frozenset(
+    {
+        AREA_FINANCE,
+        AREA_CATALOG,
+        AREA_INVENTORY,
+        AREA_PURCHASING,
+        AREA_CONTACTS,
+        AREA_SALES,
+        AREA_CRM,
+        AREA_FISCAL,
+    }
+)
 ROLE_WRITE_AREAS: dict[str, frozenset[str]] = {
-    "owner": frozenset(
-        {
-            AREA_FINANCE,
-            AREA_CATALOG,
-            AREA_INVENTORY,
-            AREA_PURCHASING,
-            AREA_CONTACTS,
-            AREA_SALES,
-            AREA_CRM,
-        }
-    ),
-    "finance": frozenset({AREA_FINANCE, AREA_CONTACTS}),
+    "owner": ALL_AREAS,
+    "finance": frozenset({AREA_FINANCE, AREA_CONTACTS, AREA_FISCAL}),
     "purchasing": frozenset({AREA_PURCHASING, AREA_CONTACTS}),
-    "sales": frozenset({AREA_SALES, AREA_CONTACTS, AREA_CRM}),
+    "sales": frozenset({AREA_SALES, AREA_CONTACTS, AREA_CRM, AREA_FISCAL}),
     "stock": frozenset({AREA_CATALOG, AREA_INVENTORY}),
     "viewer": frozenset(),
 }

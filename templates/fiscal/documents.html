@@ -1,0 +1,51 @@
+{% extends "finance/layout.html" %}
+{% block title %}Fiscal (simulação) · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading"><div><span class="eyebrow">FISCAL · SIMULAÇÃO</span><h1>Documentos fiscais simulados</h1><p>Documento interno gerado a partir de um faturamento de venda, para conferência.</p></div></div>
+<div class="alert alert-warning" role="note"><strong>{{ notice }}.</strong> Estes documentos não são notas fiscais: não geram XML, não são assinados nem transmitidos à SEFAZ. Os códigos e alíquotas são os que você informou; o sistema não confere a legislação.</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<article class="panel-card transactions-table-card mb-3">
+  <div class="panel-heading"><div><h3>Documentos</h3><p>Gere o documento na página do pedido de venda faturado.</p></div><span class="step-count">{{ documents|length }} nesta página</span></div>
+  <form method="get" action="/fiscal" class="title-filters mb-3">
+    <div><label class="form-label" for="fiscal-status">Situação</label><select class="form-select" id="fiscal-status" name="status"><option value="">Todas</option>{% for key, label in status_labels.items() %}<option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/fiscal">Limpar</a></div>
+  </form>
+  {% if documents %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Série/Número</th><th>Data</th><th>Cliente</th><th>CFOP</th><th class="text-end">Total</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for document, number in documents %}
+    <tr><td><strong>{{ number }}</strong></td><td>{{ document.issued_on.strftime('%d/%m/%Y') }}</td>
+      <td>{{ document.customer.trade_name or document.customer.name }}</td><td>{{ document.tax_profile.cfop }}</td>
+      <td class="text-end text-nowrap">R$ {{ document.total_products|brl }}</td>
+      <td><span class="badge {{ 'text-bg-warning' if document.status == 'issued' else 'text-bg-secondary' }}">{{ status_labels[document.status] }}</span></td>
+      <td><a class="btn btn-sm btn-outline-primary" href="/fiscal/{{ document.id }}">Abrir</a></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>▧</span><strong>Nenhum documento simulado</strong><small>Fature um pedido de venda e gere o documento a partir dele.</small></div>{% endif %}
+</article>
+
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Perfis tributários</h3><p>CFOP, CST/CSOSN e alíquotas usados na simulação. Só o formato é conferido.</p></div><span class="step-count">{{ profiles|length }} perfil(is)</span></div>
+  <form method="post" action="/fiscal/tax-profiles" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-md-3"><label class="form-label" for="profile-name">Nome</label><input class="form-control" id="profile-name" name="name" maxlength="80" required value="{{ form.get('name','') }}" placeholder="Venda dentro do estado"></div>
+    <div class="col-md-2"><label class="form-label" for="profile-cfop">CFOP</label><input class="form-control" id="profile-cfop" name="cfop" maxlength="5" inputmode="numeric" required value="{{ form.get('cfop','') }}" placeholder="5102"></div>
+    <div class="col-md-2"><label class="form-label" for="profile-cst">CST/CSOSN</label><input class="form-control" id="profile-cst" name="icms_cst" maxlength="3" inputmode="numeric" required value="{{ form.get('icms_cst','') }}" placeholder="102"></div>
+    <div class="col-md-1"><label class="form-label" for="profile-icms">ICMS %</label><input class="form-control" id="profile-icms" name="icms_rate" maxlength="6" inputmode="decimal" value="{{ form.get('icms_rate','') }}" placeholder="0"></div>
+    <div class="col-md-1"><label class="form-label" for="profile-pis">PIS %</label><input class="form-control" id="profile-pis" name="pis_rate" maxlength="6" inputmode="decimal" value="{{ form.get('pis_rate','') }}" placeholder="0"></div>
+    <div class="col-md-1"><label class="form-label" for="profile-cofins">COFINS %</label><input class="form-control" id="profile-cofins" name="cofins_rate" maxlength="6" inputmode="decimal" value="{{ form.get('cofins_rate','') }}" placeholder="0"></div>
+    <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Adicionar</button></div>
+  </form>
+  {% if profiles %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Perfil</th><th>CFOP</th><th>CST/CSOSN</th><th class="text-end">ICMS</th><th class="text-end">PIS</th><th class="text-end">COFINS</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for profile in profiles %}
+    <tr><td><strong>{{ profile.name }}</strong></td><td>{{ profile.cfop }}</td><td>{{ profile.icms_cst }}</td>
+      <td class="text-end">{{ profile.icms_rate|brl }}%</td><td class="text-end">{{ profile.pis_rate|brl }}%</td><td class="text-end">{{ profile.cofins_rate|brl }}%</td>
+      <td><span class="badge {{ 'text-bg-success' if profile.is_active else 'text-bg-secondary' }}">{{ 'Ativo' if profile.is_active else 'Inativo' }}</span></td>
+      <td><form method="post" action="/fiscal/tax-profiles/{{ profile.id }}/active"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="is_active" value="{{ 'false' if profile.is_active else 'true' }}"><button class="btn btn-sm {{ 'btn-outline-secondary' if profile.is_active else 'btn-outline-success' }}" type="submit">{{ 'Inativar' if profile.is_active else 'Reativar' }}</button></form></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="text-secondary mb-0">Sem perfis cadastrados, o primeiro documento usa um perfil de exemplo (CFOP 5102, CSOSN 102, alíquotas zero).</p>{% endif %}
+</article>
+{% endblock %}

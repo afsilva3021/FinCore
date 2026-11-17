@@ -128,3 +128,17 @@ Autenticação, organizações, lançamentos, plano de contas, integrações ban
 - Oportunidade ganha gera orçamento ligado a ela.
 - Taxa de conversão = ganhas ÷ (ganhas + perdidas).
 - Leads, oportunidades e atividades de uma organização não são vistos nem alterados por outra.
+
+## Fase 13 — Fiscal simulado (ERP)
+
+### Histórias de usuário
+
+- Como vendedor ou financeiro, quero gerar um documento interno com os dados tributários da venda para conferir antes de emitir a nota no meu sistema emissor.
+
+### Critérios de aceite
+
+- O total do documento é igual ao do faturamento.
+- A numeração não tem buracos nem repetição, inclusive em emissões simultâneas.
+- Um faturamento tem no máximo um documento emitido; cancelamento exige motivo.
+- O documento não altera estoque, financeiro nem contabilidade.
+- Toda tela e a API identificam o documento como simulação, sem valor fiscal.

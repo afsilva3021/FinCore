@@ -39,6 +39,7 @@ from fincore.domain.titles import PAYMENT_METHODS
 from fincore.infrastructure.models import (
     Counterparty,
     FinancialAccount,
+    FiscalDocument,
     JournalEntry,
     Organization,
     Product,
@@ -341,6 +342,10 @@ async def reverse_sales_invoice(
         invoice = await SalesInvoice.filter(id=invoice_id).select_for_update().get()
         if invoice.status != "posted":
             raise ValueError("Este faturamento já foi estornado.")
+        if await FiscalDocument.filter(sales_invoice=invoice, status="issued").exists():
+            raise ValueError(
+                "Cancele o documento fiscal simulado deste faturamento antes de estorná-lo."
+            )
         today = date.today()
         try:
             await cancel_document_titles(INVOICE_SOURCE, invoice.id)

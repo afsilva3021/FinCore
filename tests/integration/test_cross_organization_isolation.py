@@ -21,6 +21,7 @@ from fincore.application.accounting import create_journal_entry
 from fincore.application.counterparties import save_counterparty
 from fincore.application.crm import add_activity, create_opportunity, save_lead
 from fincore.application.finance import create_account, create_movement
+from fincore.application.fiscal import issue_fiscal_document, save_tax_profile
 from fincore.application.identity import register_user
 from fincore.application.inventory import register_stock_movement
 from fincore.application.products import save_product, save_product_group, save_warehouse
@@ -38,6 +39,7 @@ from fincore.infrastructure.models import (
     FinancialAccount,
     FinancialTitle,
     FinancialTransaction,
+    FiscalDocument,
     ImportedStatementTransaction,
     JournalEntry,
     JournalEntryLine,
@@ -56,6 +58,7 @@ from fincore.infrastructure.models import (
     SalesOrder,
     StockBalance,
     StockMovement,
+    TaxProfile,
     UnitOfMeasure,
     Warehouse,
 )
@@ -236,6 +239,16 @@ async def _seed_organization_a():
         operation_key=uuid4(),
         issued_on=date.today(),
     )
+    tax_profile = await save_tax_profile(
+        organization=organization, name=f"{SECRET_NAME} perfil", cfop="5102", icms_cst="00"
+    )
+    fiscal_document, _ = await issue_fiscal_document(
+        organization=organization,
+        user=user,
+        sales_invoice_id=sales_invoice.id,
+        operation_key=uuid4(),
+        tax_profile_id=tax_profile.id,
+    )
     lead = await save_lead(organization=organization, user=user, name=f"{SECRET_NAME} lead")
     opportunity = await create_opportunity(
         organization=organization, user=user, title=f"{SECRET_NAME} oportunidade", lead_id=lead.id
@@ -250,6 +263,8 @@ async def _seed_organization_a():
     stage = await PipelineStage.get(organization=organization, name="Perdido")
     return {
         "organization": organization,
+        "tax_profile": tax_profile,
+        "fiscal_document": fiscal_document,
         "lead": lead,
         "opportunity": opportunity,
         "activity": activity,
@@ -309,6 +324,12 @@ async def _snapshot(seed: dict) -> dict:
             "id", "quantity", "total_value", "movement_count"
         ),
         "stock_movements": await StockMovement.filter(organization=organization).count(),
+        "fiscal_documents": await FiscalDocument.filter(organization=organization).values(
+            "id", "status", "number"
+        ),
+        "tax_profiles": await TaxProfile.filter(organization=organization).values(
+            "id", "is_active"
+        ),
         "leads": await Lead.filter(organization=organization).values("id", "status"),
         "opportunities": await Opportunity.filter(organization=organization).values(
             "id", "stage_id", "lost_reason"
@@ -431,6 +452,20 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
             api,
             json.dumps({"sku": "INTRUSO-C", "name": "Intruso", "unit_id": a["unit"]}),
         ),
+        ("get", f"/fiscal/{a['fiscal_document']}", form, None),
+        (
+            "post",
+            f"/fiscal/{a['fiscal_document']}/cancel",
+            form,
+            "reason=Tentativa+de+outra+organização",
+        ),
+        (
+            "post",
+            "/fiscal/documents",
+            form,
+            f"sales_invoice_id={a['sales_invoice']}&operation_key={uuid4()}",
+        ),
+        ("post", f"/fiscal/tax-profiles/{a['tax_profile']}/active", form, "is_active=false"),
         ("get", f"/crm/opportunities/{a['opportunity']}", form, None),
         (
             "post",
@@ -532,6 +567,7 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
     assert not await ProductGroup.filter(organization=intruder_org).exists()
     assert not await StockMovement.filter(organization=intruder_org).exists()
     assert not await Opportunity.filter(organization=intruder_org).exists()
+    assert not await FiscalDocument.filter(organization=intruder_org).exists()
 
     # Listagens da organização B não mostram nada da organização A.
     for path in (
@@ -547,6 +583,8 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
         "/crm",
         "/crm/leads",
         "/api/v1/crm/opportunities",
+        "/fiscal",
+        "/api/v1/fiscal/documents",
     ):
         response = await asyncio.to_thread(client.get, path, headers=form)
         assert response.status_code == 200, path
