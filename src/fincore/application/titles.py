@@ -7,7 +7,12 @@ from uuid import UUID, uuid4
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
-from fincore.application.finance import _create_movement_journal
+from fincore.application.finance import (
+    _create_journal,
+    _create_movement_journal,
+    _ensure_financial_ledger_account,
+    _system_account,
+)
 from fincore.domain.money import MAX_AMOUNT, parse_brl, quantize_money
 from fincore.domain.titles import (
     PAYMENT_METHODS,
@@ -24,6 +29,7 @@ from fincore.infrastructure.models import (
     FinancialAccount,
     FinancialTitle,
     FinancialTransaction,
+    LedgerAccount,
     Organization,
     TitleSettlement,
     User,
@@ -216,6 +222,134 @@ async def create_titles(
     return created
 
 
+async def create_document_titles(
+    *,
+    organization: Organization,
+    user: User,
+    title_type: str,
+    counterparty: Counterparty,
+    account: FinancialAccount,
+    amount: Decimal,
+    issue_date: date,
+    first_due_date: date,
+    payment_method: str,
+    installment_count: int,
+    description: str,
+    origin: str,
+    accrual_account: LedgerAccount,
+    source_type: str,
+    source_id: UUID,
+    document_number: str | None = None,
+    related_reference: str | None = None,
+) -> list[FinancialTitle]:
+    """Títulos gerados por uma compra ou venda. **Chame dentro da transação do documento.**
+
+    O documento já lançou o valor por competência contra `accrual_account` (Fornecedores
+    ou Clientes); a baixa destes títulos só quita essa conta.
+    """
+    if payment_method not in PAYMENT_METHODS:
+        raise ValueError("Selecione uma forma de pagamento ou recebimento válida.")
+    total = quantize_money(amount)
+    if total <= 0 or total > MAX_AMOUNT:
+        raise ValueError("O valor do título deve ser maior que zero.")
+    installments = split_installments(total, installment_count, first_due_date)
+    group_id = uuid4() if installment_count > 1 else None
+    titles = []
+    for number, (installment_amount, due_date) in enumerate(installments, start=1):
+        label = (
+            f"{description} ({number}/{installment_count})"
+            if installment_count > 1
+            else description
+        )
+        titles.append(
+            await FinancialTitle.create(
+                organization=organization,
+                created_by=user,
+                counterparty=counterparty,
+                account=account,
+                installment_group=group_id,
+                title_type=title_type,
+                description=label[:240],
+                document_number=document_number,
+                original_amount=installment_amount,
+                issue_date=issue_date,
+                due_date=due_date,
+                payment_method=payment_method,
+                payment_terms="installment" if installment_count > 1 else "cash",
+                installment_number=number,
+                installment_count=installment_count,
+                related_reference=related_reference,
+                origin=origin,
+                accrual_account=accrual_account,
+                source_type=source_type,
+                source_id=source_id,
+            )
+        )
+    return titles
+
+
+async def cancel_document_titles(source_type: str, source_id: UUID) -> None:
+    """Cancela os títulos de um documento estornado. **Chame dentro da transação.**
+
+    Recusa se algum título já recebeu baixa: primeiro é preciso tratar o pagamento.
+    """
+    titles = await FinancialTitle.filter(
+        source_type=source_type, source_id=source_id
+    ).select_for_update()
+    for title in titles:
+        if title.status == "cancelled":
+            continue
+        ensure_can_cancel(title.status, await TitleSettlement.filter(title=title).exists())
+        title.status = "cancelled"
+        await title.save(update_fields=["status"])
+
+
+async def _create_accrual_settlement_journal(
+    organization: Organization,
+    user: User,
+    title: FinancialTitle,
+    transaction: FinancialTransaction,
+    account: FinancialAccount,
+    amounts,
+) -> None:
+    """Baixa de título de compra/venda: quita Fornecedores ou Clientes, não vira despesa.
+
+    Juros, multa e tarifas (e o desconto concedido a clientes) vão para despesas
+    financeiras; desconto obtido de fornecedor e juros/multa recebidos, para receitas
+    financeiras. O lançamento continua com débitos iguais aos créditos.
+    """
+    bank = await _ensure_financial_ledger_account(organization, user, account)
+    accrual = await LedgerAccount.get(id=title.accrual_account_id)
+    zero = Decimal("0.00")
+    if title.title_type == "payable":
+        financial_expense = amounts.interest + amounts.fine + amounts.fees
+        financial_revenue = amounts.discount
+        lines = [(accrual, amounts.applied, zero), (bank, zero, amounts.net_amount)]
+    else:
+        financial_expense = amounts.discount + amounts.fees
+        financial_revenue = amounts.interest + amounts.fine
+        lines = [(bank, amounts.net_amount, zero), (accrual, zero, amounts.applied)]
+    if financial_expense > 0:
+        expense = await _system_account(
+            organization, user, "SYS-FIN-EXP", "Despesas financeiras", "expense"
+        )
+        lines.append((expense, financial_expense, zero))
+    if financial_revenue > 0:
+        revenue = await _system_account(
+            organization, user, "SYS-FIN-REV", "Receitas financeiras", "revenue"
+        )
+        lines.append((revenue, zero, financial_revenue))
+    await _create_journal(
+        organization=organization,
+        user=user,
+        idempotency_key=uuid4(),
+        entry_date=transaction.competence_date,
+        description=transaction.description,
+        lines=lines,
+        source_transaction=transaction,
+    )
+
+
 async def title_balances(titles: list[FinancialTitle]) -> dict[UUID, Decimal]:
     if not titles:
         return {}
@@ -299,7 +433,12 @@ async def settle_title(
             settled_at=datetime.now(UTC),
             status="settled",
         )
-        await _create_movement_journal(organization, user, transaction)
+        if title.origin == "manual":
+            await _create_movement_journal(organization, user, transaction)
+        else:
+            await _create_accrual_settlement_journal(
+                organization, user, title, transaction, account, amounts
+            )
         settlement = await TitleSettlement.create(
             organization=organization,
             title=title,
@@ -332,6 +471,10 @@ async def cancel_title(*, organization: Organization, title_id: UUID) -> Financi
         )
         if title is None:
             raise ValueError("Título não encontrado nesta organização.")
+        if title.origin != "manual":
+            raise ValueError(
+                "Este título foi gerado por uma compra ou venda; estorne o documento de origem."
+            )
         ensure_can_cancel(title.status, await TitleSettlement.filter(title=title).exists())
         title.status = "cancelled"
         await title.save(update_fields=["status"])

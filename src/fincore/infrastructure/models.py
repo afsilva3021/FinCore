@@ -221,6 +221,14 @@ class FinancialTitle(Model):
     charge_reference = fields.CharField(max_length=160, null=True)
     attachment_reference = fields.CharField(max_length=512, null=True)
     notes = fields.TextField(null=True)
+    # `manual` = cadastrado à mão (lança só na baixa). `purchase`/`sale` = gerado por um
+    # documento e já lançado por competência contra `accrual_account`.
+    origin = fields.CharField(max_length=12, default="manual")
+    accrual_account = fields.ForeignKeyField(
+        "models.LedgerAccount", related_name="accrual_titles", null=True, on_delete=fields.RESTRICT
+    )
+    source_type = fields.CharField(max_length=24, null=True)
+    source_id = fields.UUIDField(null=True, db_index=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
 
@@ -544,3 +552,126 @@ class StockMovement(Model):
 
     class Meta:
         unique_together = (("product", "warehouse", "sequence"),)
+
+
+# --- Numeração de documentos e compras (ERP, fase 10) -----------------------------------
+
+
+class DocumentSequence(Model):
+    """Último número usado por tipo de documento em cada organização."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="document_sequences", on_delete=fields.CASCADE
+    )
+    kind = fields.CharField(max_length=24)
+    last_number = fields.IntField(default=0)
+
+    class Meta:
+        unique_together = (("organization", "kind"),)
+
+
+class PurchaseOrder(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="purchase_orders", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_purchase_orders", on_delete=fields.RESTRICT
+    )
+    number = fields.IntField()
+    supplier = fields.ForeignKeyField(
+        "models.Counterparty", related_name="purchase_orders", on_delete=fields.RESTRICT
+    )
+    warehouse = fields.ForeignKeyField(
+        "models.Warehouse", related_name="purchase_orders", on_delete=fields.RESTRICT
+    )
+    # Conta financeira e categoria sugeridas para os títulos a pagar gerados no recebimento.
+    account = fields.ForeignKeyField(
+        "models.FinancialAccount", related_name="purchase_orders", on_delete=fields.RESTRICT
+    )
+    status = fields.CharField(max_length=20, default="draft")
+    order_date = fields.DateField()
+    expected_date = fields.DateField(null=True)
+    payment_method = fields.CharField(max_length=24, default="boleto")
+    installment_count = fields.IntField(default=1)
+    # Dias entre o recebimento e o vencimento da primeira parcela.
+    first_due_days = fields.IntField(default=30)
+    notes = fields.TextField(null=True)
+    operation_key = fields.UUIDField(null=True, unique=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "number"),)
+
+
+class PurchaseOrderItem(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    order = fields.ForeignKeyField(
+        "models.PurchaseOrder", related_name="items", on_delete=fields.CASCADE
+    )
+    product = fields.ForeignKeyField(
+        "models.Product", related_name="purchase_items", on_delete=fields.RESTRICT
+    )
+    position = fields.IntField()
+    quantity = fields.DecimalField(max_digits=15, decimal_places=4)
+    unit_cost = fields.DecimalField(max_digits=15, decimal_places=6)
+    # Cache do que já foi recebido (recebimentos não estornados); muda só com o pedido bloqueado.
+    received_quantity = fields.DecimalField(max_digits=15, decimal_places=4, default=0)
+
+    class Meta:
+        unique_together = (("order", "position"),)
+
+
+class PurchaseReceipt(Model):
+    """Recebimento de mercadoria: entra no estoque e gera contas a pagar."""
+
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="purchase_receipts", on_delete=fields.CASCADE
+    )
+    order = fields.ForeignKeyField(
+        "models.PurchaseOrder", related_name="receipts", on_delete=fields.RESTRICT
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_purchase_receipts", on_delete=fields.RESTRICT
+    )
+    number = fields.IntField()
+    received_on = fields.DateField()
+    document_number = fields.CharField(max_length=60, null=True)
+    total = fields.DecimalField(max_digits=15, decimal_places=2)
+    status = fields.CharField(max_length=12, default="posted")
+    operation_key = fields.UUIDField(unique=True)
+    journal_entry = fields.ForeignKeyField(
+        "models.JournalEntry",
+        related_name="purchase_receipts",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
+    reversed_at = fields.DatetimeField(null=True)
+    reversed_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="reversed_purchase_receipts",
+        null=True,
+        on_delete=fields.RESTRICT,
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "number"),)
+
+
+class PurchaseReceiptItem(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    receipt = fields.ForeignKeyField(
+        "models.PurchaseReceipt", related_name="items", on_delete=fields.CASCADE
+    )
+    order_item = fields.ForeignKeyField(
+        "models.PurchaseOrderItem", related_name="receipt_items", on_delete=fields.RESTRICT
+    )
+    quantity = fields.DecimalField(max_digits=15, decimal_places=4)
+    unit_cost = fields.DecimalField(max_digits=15, decimal_places=6)
+    total_cost = fields.DecimalField(max_digits=15, decimal_places=2)
+    stock_movement = fields.OneToOneField(
+        "models.StockMovement", related_name="purchase_receipt_item", on_delete=fields.RESTRICT
+    )

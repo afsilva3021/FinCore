@@ -233,4 +233,21 @@ Segunda fase do roteiro em [erp-roadmap.md](erp-roadmap.md). Compras e vendas ai
 - [ ] O histórico é ordenado pela ordem de registro; a data informada é só informativa e não reordena o custo médio.
 - [ ] O formulário de movimentação lista todos os produtos num `select`; com muitos produtos vai precisar de busca.
 
-Próximo passo: fase 10 (compras) — pedido de compra, recebimento com entrada em estoque e contas a pagar por competência.
+## ERP fase 10 — compras (2026-11-17)
+
+- [x] Modelos `PurchaseOrder`, `PurchaseOrderItem`, `PurchaseReceipt`, `PurchaseReceiptItem` e `DocumentSequence`; `FinancialTitle` ganhou origem (`manual`/`purchase`/`sale`), conta de contrapartida e documento de origem. Migration `0021` aditiva, aplicada em banco limpo e no banco de teste com 136 títulos existentes (todos ficaram `manual`).
+- [x] Pedido em rascunho → aprovado → recebido em parte → recebido, ou cancelado enquanto não houver mercadoria recebida. Numeração `PC-00001` sem buracos: tentativa recusada não gasta número.
+- [x] Recebimento total ou parcial numa única transação com o pedido bloqueado: entrada em estoque pelo custo do pedido (recalcula o custo médio), títulos a pagar com parcelas que somam exatamente o total e lançamento D Estoque / C Fornecedores.
+- [x] Concorrência: 5 recebimentos simultâneos de 4 unidades num pedido de 10 gravam exatamente 2. Reenvio de pedido ou recebimento com a mesma chave não duplica.
+- [x] Baixa de título de compra quita Fornecedores (não vira despesa); juros, multa e tarifas vão para despesas financeiras e o desconto obtido para receitas financeiras, com débitos iguais aos créditos.
+- [x] Estorno de recebimento: tira a mercadoria do estoque pelo mesmo valor, cancela os títulos e inverte o lançamento. É recusado, sem alterar nada, se algum título já teve baixa ou se a mercadoria já saiu do estoque.
+- [x] Proteções: título de compra não é cancelado pela tela financeira, a transação da baixa dele não é estornada pelo extrato e o movimento de estoque da compra não é estornado pela tela de estoque; tudo passa pelo recebimento.
+- [x] Páginas `/purchases` (lista e novo pedido) e `/purchases/{id}` (itens, recebimento, estorno); API de consulta `/api/v1/purchase-orders`.
+- [x] Perfil `purchasing` (Compras) e área `contacts`: Compras e Financeiro cadastram contatos; só Compras e Proprietário operam pedidos.
+- [x] Isolamento: 6 tentativas e 2 listagens novas no teste de isolamento. Seed de demonstração com uma compra recebida em parte.
+- [x] Ruff e suíte completa aprovados: 247 testes (159 unitários, 88 de integração).
+- [ ] Pedido em rascunho não pode ser editado; cancela-se e cria-se outro.
+- [ ] Pedidos de compra aceitam só produtos com controle de estoque; despesas sem estoque continuam em Contas a pagar.
+- [ ] A API de compras é só de consulta; criar, aprovar e receber é pelas páginas.
+- [ ] Os relatórios financeiros continuam em regime de caixa: o pagamento de uma compra aparece como despesa do período no relatório, embora no diário quite Fornecedores.
+- [ ] Telas de compras ainda não foram abertas no navegador (previsto junto com vendas).

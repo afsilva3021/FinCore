@@ -36,6 +36,8 @@ REASON_LABELS = {
     (OUT, TRANSFER): "Transferência enviada",
     (IN, REVERSAL): "Estorno de saída",
     (OUT, REVERSAL): "Estorno de entrada",
+    (IN, "purchase"): "Compra recebida",
+    (OUT, "sale"): "Venda faturada",
 }
 
 
@@ -154,13 +156,22 @@ def ensure_manual_reason(direction: str, reason: str) -> None:
 
 
 def ensure_reversible(
-    *, reason: str, already_reversed: bool, sequence: int, last_sequence: int
+    *,
+    reason: str,
+    already_reversed: bool,
+    sequence: int,
+    last_sequence: int,
+    from_document: bool = False,
 ) -> None:
     """Só o último movimento da posição pode ser estornado, e uma única vez.
 
     Estornar um movimento antigo mudaria o custo médio de tudo o que veio depois; para
     corrigir o passado, lança-se um ajuste.
     """
+    if from_document:
+        raise ValueError(
+            "Este movimento veio de uma compra ou venda; estorne o documento de origem."
+        )
     if reason == REVERSAL:
         raise ValueError("Um estorno não pode ser estornado; lance um novo movimento.")
     if already_reversed:

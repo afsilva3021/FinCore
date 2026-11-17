@@ -15,6 +15,7 @@ from tortoise.queryset import QuerySet
 
 from fincore.infrastructure.models import (
     Category,
+    Counterparty,
     FinancialAccount,
     FinancialTitle,
     FinancialTransaction,
@@ -25,6 +26,9 @@ from fincore.infrastructure.models import (
     Organization,
     Product,
     ProductGroup,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseReceipt,
     ReconciliationMatch,
     StockBalance,
     StockMovement,
@@ -471,8 +475,82 @@ async def stock_movement_flags(
         item.id
         for item in items
         if item.reason != "reversal"
+        and item.source_type is None
         and item.id not in reversed_ids
         and is_last(item)
         and item.transfer_id not in blocked_transfers
     }
     return reversed_ids, reversible
+
+
+# --- Compras --------------------------------------------------------------------------
+
+
+async def active_suppliers(organization: Organization) -> list[Counterparty]:
+    return await Counterparty.filter(
+        organization=organization, is_active=True, is_supplier=True
+    ).order_by("name")
+
+
+def purchase_orders_query(
+    organization: Organization, *, status: str = "", search: str = ""
+) -> QuerySet[PurchaseOrder]:
+    query = PurchaseOrder.filter(organization=organization)
+    if status:
+        query = query.filter(status=status)
+    term = search.strip()
+    if term:
+        condition = Q(supplier__name__icontains=term) | Q(supplier__trade_name__icontains=term)
+        digits = term.upper().removeprefix("PC-").lstrip("0")
+        if digits.isdigit():
+            condition |= Q(number=int(digits))
+        query = query.filter(condition)
+    return query.select_related("supplier", "warehouse").order_by("-number")
+
+
+async def get_purchase_order(organization: Organization, order_id: UUID) -> PurchaseOrder | None:
+    return (
+        await PurchaseOrder.filter(id=order_id, organization=organization)
+        .select_related("supplier", "warehouse", "account", "created_by")
+        .first()
+    )
+
+
+async def purchase_order_items(orders: Iterable[PurchaseOrder]) -> dict[UUID, list]:
+    """Itens (com produto e unidade) de vários pedidos numa consulta só, por pedido."""
+    ids = [order.id for order in orders]
+    grouped: dict[UUID, list] = {order_id: [] for order_id in ids}
+    if ids:
+        rows = (
+            await PurchaseOrderItem.filter(order_id__in=ids)
+            .select_related("product__unit")
+            .order_by("position")
+        )
+        for row in rows:
+            grouped[row.order_id].append(row)
+    return grouped
+
+
+async def purchase_receipts(order: PurchaseOrder) -> list[PurchaseReceipt]:
+    return await PurchaseReceipt.filter(order=order).select_related("created_by").order_by("number")
+
+
+async def get_purchase_receipt(
+    organization: Organization, receipt_id: UUID
+) -> PurchaseReceipt | None:
+    return await PurchaseReceipt.get_or_none(id=receipt_id, organization=organization)
+
+
+async def document_titles(
+    organization: Organization, source_type: str, source_ids: Iterable[UUID]
+) -> dict[UUID, list[FinancialTitle]]:
+    """Títulos gerados por documentos (recebimentos de compra, faturamentos), por documento."""
+    ids = list(source_ids)
+    grouped: dict[UUID, list[FinancialTitle]] = {source_id: [] for source_id in ids}
+    if ids:
+        rows = await FinancialTitle.filter(
+            organization=organization, source_type=source_type, source_id__in=ids
+        ).order_by("installment_number")
+        for row in rows:
+            grouped[row.source_id].append(row)
+    return grouped

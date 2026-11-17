@@ -20,8 +20,19 @@ from fincore.application.identity import register_user
 from fincore.application.inventory import register_stock_movement, transfer_stock
 from fincore.application.members import add_member
 from fincore.application.products import save_product, save_product_group, save_warehouse
+from fincore.application.purchases import (
+    approve_purchase_order,
+    create_purchase_order,
+    receive_purchase_order,
+)
 from fincore.application.titles import create_titles, settle_title
-from fincore.infrastructure.models import Membership, UnitOfMeasure, User, Warehouse
+from fincore.infrastructure.models import (
+    Membership,
+    PurchaseOrderItem,
+    UnitOfMeasure,
+    User,
+    Warehouse,
+)
 
 DEMO_ORGANIZATION = "Padaria Exemplo (dados fictícios)"
 DEMO_EMAIL = "demo@fincore.example"
@@ -173,8 +184,9 @@ async def seed_demo(today: date | None = None) -> str:
     for name in sorted({item[2] for item in PRODUCTS}):
         groups[name] = await save_product_group(organization=organization, user=owner, name=name)
     stock_day = today - timedelta(days=3)
+    created_products = {}
     for sku, name, group, unit, price, min_stock, opening, cost in PRODUCTS:
-        product = await save_product(
+        product = created_products[sku] = await save_product(
             organization=organization,
             user=owner,
             sku=sku,
@@ -224,4 +236,43 @@ async def seed_demo(today: date | None = None) -> str:
                 occurred_on=today,
                 notes="Sobras do dia descartadas",
             )
+    # Compra recebida em parte: gera estoque, contas a pagar e lançamento por competência.
+    supplier = await save_counterparty(
+        organization=organization,
+        person_type="company",
+        name="Laticínios Exemplo Ltda",
+        trade_name="Laticínios Exemplo",
+        is_supplier=True,
+    )
+    purchase = await create_purchase_order(
+        organization=organization,
+        user=owner,
+        operation_key=uuid4(),
+        supplier_id=supplier.id,
+        warehouse_id=main_warehouse.id,
+        account_id=bank.id,
+        order_date=today - timedelta(days=2),
+        expected_date=today + timedelta(days=5),
+        payment_method="boleto",
+        installment_count=2,
+        first_due_days=28,
+        items=[
+            (created_products["PAO-QUEIJO"].id, Decimal("10"), Decimal("22.00")),
+            (created_products["SONHO-CREME"].id, Decimal("24"), Decimal("2.90")),
+        ],
+        notes="Reposição quinzenal",
+    )
+    await approve_purchase_order(organization, purchase.id)
+    purchase_items = {
+        item.product_id: item for item in await PurchaseOrderItem.filter(order=purchase)
+    }
+    await receive_purchase_order(
+        organization=organization,
+        user=owner,
+        order_id=purchase.id,
+        operation_key=uuid4(),
+        received_on=today,
+        document_number="NF 4521",
+        quantities={purchase_items[created_products["PAO-QUEIJO"].id].id: Decimal("10")},
+    )
     return DEMO_EMAIL

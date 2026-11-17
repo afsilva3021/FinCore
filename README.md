@@ -1,6 +1,6 @@
 # FinCore
 
-FinCore é um ERP para comércio em construção, em português (pt-BR): o núcleo financeiro e contábil está completo e os módulos de produtos, estoque, compras, vendas, CRM e fiscal simulado entram por fases ([roteiro](docs/erp-roadmap.md)). Hoje, além do financeiro, existem os cadastros de produto e o controle de estoque. A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
+FinCore é um ERP para comércio em construção, em português (pt-BR): o núcleo financeiro e contábil está completo e os módulos de produtos, estoque, compras, vendas, CRM e fiscal simulado entram por fases ([roteiro](docs/erp-roadmap.md)). Hoje, além do financeiro, existem os cadastros de produto, o controle de estoque e as compras. A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
 
 Este README serve como visão de produto e guia reproduzível para desenvolvedores e agentes de código. Leia também [AGENTS.md](AGENTS.md), que define invariantes e o fluxo obrigatório de implementação, e `docs/`, que contém contratos e decisões detalhados.
 
@@ -47,8 +47,8 @@ O Robyn é um framework web Python com servidor em Rust, assíncrono e com pouca
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0020`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
-- Transformação em ERP em andamento: fases 8 (cadastros de produto) e 9 (estoque) concluídas; compras, vendas, CRM e fiscal simulado ainda **não** existem, então o estoque só é movimentado manualmente. Situação por fase em [docs/erp-roadmap.md](docs/erp-roadmap.md).
+- Migrations versionadas até `0021`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- Transformação em ERP em andamento: fases 8 (cadastros de produto), 9 (estoque) e 10 (compras) concluídas; vendas, CRM e fiscal simulado ainda **não** existem. Situação por fase em [docs/erp-roadmap.md](docs/erp-roadmap.md).
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
@@ -60,6 +60,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-17 | ERP fase 10: compras — pedido de compra, recebimento total ou parcial com entrada em estoque, contas a pagar e lançamento por competência (estoque contra fornecedores), estorno de recebimento, perfil **Compras** e API de consulta `/api/v1/purchase-orders`. Títulos passam a ter origem (`manual`, `purchase`, `sale`). Migration `0021`. |
 | 2026-11-17 | ERP fase 9: estoque — saldo inicial, ajustes, transferências entre depósitos e estorno em `/stock` e `/stock/movements`, custo médio ponderado, lançamento contábil dos ajustes e API `/api/v1/stock`. Migration `0020`. Correção: parâmetros da URL passam a ser decodificados (mensagens apareciam como `Contato+cadastrado.` e buscas com acento ou espaço não encontravam nada no servidor real). |
 | 2026-11-17 | `render.yaml` para publicar uma demonstração online no plano gratuito do Render (aplicação + PostgreSQL, com dados fictícios); instruções na Opção C da instalação. |
 | 2026-11-17 | Início da transformação em ERP ([roteiro](docs/erp-roadmap.md)). Fase 8: cadastros de produto — produtos, grupos, unidades de medida e depósitos em `/products` e `/product-settings`, API `/api/v1/products`, perfil **Estoque** e permissão de escrita por área. Migration `0019`. Correção: marcadores de conflito de merge removidos de `docs/progress.md`. |
@@ -124,9 +125,10 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
   | Proprietário | Tudo, inclusive adicionar membros, mudar perfis e desativar acessos |
   | Financeiro | Cadastrar e alterar dados financeiros e contábeis; só consulta produtos; não gerencia membros |
   | Estoque | Cadastrar produtos, grupos, unidades e depósitos e movimentar o estoque; só consulta o financeiro |
+  | Compras | Criar pedidos de compra, receber mercadoria e cadastrar fornecedores; só consulta o restante |
   | Somente leitura | Consultar telas e relatórios; nenhuma alteração |
 
-  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. Cada rota pertence a uma área de escrita (cadastros de produto, estoque ou financeiro) e cada perfil altera só as suas áreas; uma rota ainda não classificada conta como financeira. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
+  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. Cada rota pertence a uma área de escrita (financeiro, contatos, cadastros de produto, estoque ou compras) e cada perfil altera só as suas áreas; uma rota ainda não classificada conta como financeira. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
 - Cadastro próprio de clientes e fornecedores em `/customers` e `/suppliers`, com CPF/CNPJ, endereço, contato, inativação e reativação.
 - Consulta de endereço por CEP via ViaCEP, acionada pelo formulário de contato; os campos também podem ser preenchidos manualmente.
 
@@ -190,11 +192,20 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
 - Reenvio do formulário ou da requisição com a mesma `operation_key` não movimenta duas vezes.
 - Histórico em `/stock/movements`, com o saldo depois de cada movimento. A ordem é a de registro; a data informada não reordena o custo médio.
 - Ajustes lançam no diário automaticamente (estoque contra patrimônio de abertura, ajustes positivos ou perdas); o saldo da conta contábil de estoque bate com o valor das posições. Regras em [docs/accounting.md](docs/accounting.md).
-- **Ainda não há compras nem vendas:** a entrada por compra e a baixa por venda chegam nas fases 10 e 11.
+- Movimentos gerados por compras só são estornados pelo recebimento de origem.
+
+### Compras (ERP, fase 10)
+
+- Pedidos de compra em `/purchases`: fornecedor, depósito de destino, itens com quantidade e custo, forma de pagamento, parcelas e prazo da primeira parcela. Numeração `PC-00001` por organização.
+- Estados: rascunho → aprovado → recebido em parte → recebido; cancelamento só enquanto não houver mercadoria recebida. O pedido em si não mexe em estoque nem em contas a pagar.
+- **Recebimento** total ou parcial, em `/purchases/{id}`: dá entrada no estoque pelo custo do pedido (recalcula o custo médio), gera as contas a pagar com parcelas que somam exatamente o valor recebido e lança no diário, tudo numa única transação. Não se recebe mais do que falta.
+- **Por competência:** o recebimento lança estoque contra fornecedores; pagar o título quita fornecedores em vez de virar despesa. Regras em [docs/accounting.md](docs/accounting.md).
+- **Estorno de recebimento** tira a mercadoria do estoque, cancela os títulos e inverte o lançamento. É recusado se algum título já foi pago ou se a mercadoria já saiu.
+- Limites desta fase: rascunho não é editado (cancela-se e cria-se outro), só entram produtos com controle de estoque e a API é só de consulta.
 
 ### API e demonstrações
 
-- API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias, transações (listar, consultar, criar, liquidar e estornar), títulos (listar, detalhar, cadastrar, baixar e cancelar), produtos (listar, detalhar e cadastrar) e estoque (posição, movimentos, movimentar e estornar), com paginação e isolamento por organização.
+- API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias, transações (listar, consultar, criar, liquidar e estornar), títulos (listar, detalhar, cadastrar, baixar e cancelar), produtos (listar, detalhar e cadastrar), estoque (posição, movimentos, movimentar e estornar) e pedidos de compra (consulta), com paginação e isolamento por organização.
 - `/integrations` permite executar simuladores locais de Pix, boleto, cartão, webhook e Open Finance.
 - Contratos e rotas: [docs/api.md](docs/api.md). Limites de integrações: [docs/external-integrations.md](docs/external-integrations.md).
 
@@ -220,6 +231,9 @@ Os modelos Tortoise estão em `src/fincore/infrastructure/models.py`; migrations
 | `Warehouse` | Depósito de estoque; exatamente um padrão por organização |
 | `StockMovement` | Movimento de estoque efetivado e imutável: sentido, motivo, quantidade, custo, saldo após o movimento, chave idempotente, par de transferência, estorno e lançamento contábil |
 | `StockBalance` | Posição do produto no depósito (quantidade e valor total); cache derivado dos movimentos, alterado só na transação do movimento |
+| `PurchaseOrder`, `PurchaseOrderItem` | Pedido de compra numerado e seus itens (quantidade, custo e quanto já foi recebido) |
+| `PurchaseReceipt`, `PurchaseReceiptItem` | Recebimento de mercadoria: liga o pedido aos movimentos de estoque, aos títulos a pagar e ao lançamento contábil; pode ser estornado |
+| `DocumentSequence` | Último número usado por tipo de documento em cada organização |
 
 As regras contábeis, estados e invariantes estão detalhados em [docs/accounting.md](docs/accounting.md), [docs/requirements.md](docs/requirements.md) e [AGENTS.md](AGENTS.md). Não criar um campo de saldo editável como fonte da verdade; derive valores realizados dos movimentos/diário. Datas de competência, vencimento e liquidação representam conceitos diferentes.
 

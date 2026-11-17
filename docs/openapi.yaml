@@ -160,6 +160,35 @@ components:
       type: object
       properties:
         items: {type: array, items: {$ref: '#/components/schemas/StockMovement'}}
+    PurchaseOrder:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string, examples: [PC-00001]}
+        status: {type: string, enum: [draft, approved, partially_received, received, cancelled]}
+        supplier:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+        warehouse_id: {type: string, format: uuid}
+        order_date: {type: string, format: date}
+        expected_date: {type: [string, "null"], format: date}
+        payment_method: {type: string}
+        installment_count: {type: integer}
+        first_due_days: {type: integer}
+        total: {$ref: '#/components/schemas/Money'}
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              product_id: {type: string, format: uuid}
+              sku: {type: string}
+              quantity: {$ref: '#/components/schemas/Quantity'}
+              unit_cost: {type: string, examples: ["4.000000"]}
+              received_quantity: {$ref: '#/components/schemas/Quantity'}
     Title:
       type: object
       properties:
@@ -397,6 +426,38 @@ paths:
         "403": {$ref: '#/components/responses/Forbidden'}
         "404": {$ref: '#/components/responses/NotFound'}
         "409": {$ref: '#/components/responses/Conflict'}
+  /api/v1/purchase-orders:
+    get:
+      summary: Lista pedidos de compra
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: status, in: query, schema: {type: string, enum: [draft, approved, partially_received, received, cancelled]}}
+      responses:
+        "200":
+          description: Pedidos do mais novo para o mais antigo, com itens e total.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/PurchaseOrder'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/purchase-orders/{order_id}:
+    get:
+      summary: Detalha um pedido de compra
+      parameters:
+        - {name: order_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Pedido com itens.
+          content: {application/json: {schema: {$ref: '#/components/schemas/PurchaseOrder'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "404": {$ref: '#/components/responses/NotFound'}
   /api/v1/titles:
     get:
       summary: Lista títulos a pagar/receber

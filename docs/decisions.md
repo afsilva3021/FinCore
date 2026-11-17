@@ -38,3 +38,8 @@
 - **Estorno só do último movimento da posição:** restaura quantidade e valor exatos sem recalcular o histórico. Corrigir um movimento antigo é feito por ajuste. Alternativa descartada: estornar qualquer movimento pelo custo médio atual, que deixaria o lançamento contábil do estorno diferente do original.
 - **Bloqueio por posição, em ordem fixa:** cada operação bloqueia as linhas de `StockBalance` envolvidas em ordem de ID, o que impede saldo negativo em saídas simultâneas e evita deadlock entre transferências opostas.
 - **Parâmetros da URL decodificados em um só lugar:** `_query()` em `presentation/web.py` aplica `unquote_plus`, porque o servidor Robyn entrega os valores crus e o cliente de teste os entrega decodificados.
+- **Origem do título (fase 10):** `FinancialTitle.origin` separa títulos manuais (lançam na baixa) dos gerados por compra ou venda (lançados por competência no documento). A baixa escolhe o lançamento pela origem. Títulos de documento só são cancelados pelo estorno do documento.
+- **Recebimento como unidade atômica:** estoque, títulos e diário são gravados na transação que bloqueia o pedido. As funções de estoque e de títulos usadas por documentos não abrem transação própria; quem chama é o documento.
+- **Estorno de documento desfaz pelo valor original:** diferente do estorno manual de estoque, não exige ser o último movimento; exige que quantidade e valor ainda estejam na posição.
+- **Numeração por `DocumentSequence`:** contador por organização e tipo, bloqueado dentro da transação do documento, o que evita número repetido e buraco quando a gravação falha.
+- **Pedido de compra só com produtos de estoque e sem edição de rascunho:** simplificações desta fase, registradas como pendência.

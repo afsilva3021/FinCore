@@ -59,3 +59,17 @@ Movimentos manuais lançam no diário na mesma transação do movimento, já efe
 - O saldo de `SYS-STOCK` deve ser igual à soma do valor das posições de estoque. Lançamentos manuais nessa conta quebram essa igualdade.
 - Movimentos são imutáveis. Só o último movimento de uma posição pode ser estornado; estornar um movimento antigo mudaria o custo médio de tudo o que veio depois, então o passado é corrigido por ajuste.
 - Compras e vendas (fases 10 e 11) usarão os motivos `purchase` e `sale` e lançarão contra Fornecedores e CMV.
+
+## Compras (por competência)
+
+Títulos cadastrados à mão continuam lançando só na baixa (despesa ou receita contra o banco). Títulos gerados por um documento de compra ou venda já nascem lançados por competência, e a baixa só quita a conta de contrapartida.
+
+| Evento | Débito | Crédito |
+|---|---|---|
+| Recebimento de compra | `SYS-STOCK` Estoque | `SYS-SUPPLIERS` Fornecedores (passivo) |
+| Baixa de título de compra | `SYS-SUPPLIERS` (valor aplicado) e `SYS-FIN-EXP` Despesas financeiras (juros + multa + tarifas) | Conta do banco (valor líquido) e `SYS-FIN-REV` Receitas financeiras (desconto obtido) |
+| Estorno de recebimento | `SYS-SUPPLIERS` | `SYS-STOCK` |
+
+- O saldo de `SYS-SUPPLIERS` é o total em aberto dos títulos de compra.
+- O estorno de recebimento exige que nenhum título dele tenha baixa e que a mercadoria ainda esteja no estoque.
+- Os relatórios e a visão geral financeira são de caixa: mostram o pagamento da compra como saída do período. O diário é quem separa estoque, dívida e resultado.

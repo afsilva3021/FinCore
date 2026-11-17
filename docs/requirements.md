@@ -76,3 +76,21 @@ Autenticação, organizações, lançamentos, plano de contas, integrações ban
 - Ajustes geram lançamento com débitos iguais aos créditos; o estorno gera o lançamento inverso.
 - Quantidades respeitam as casas decimais da unidade do produto.
 - Só os perfis Proprietário e Estoque movimentam; movimentos de uma organização não são vistos nem alterados por outra.
+
+## Fase 10 — Compras (ERP)
+
+### Histórias de usuário
+
+- Como comprador, quero registrar um pedido para um fornecedor e receber a mercadoria de uma vez ou em partes.
+- Como financeiro, quero que cada recebimento gere as contas a pagar com as parcelas combinadas.
+- Como contador, quero a mercadoria no ativo e a dívida no passivo no momento do recebimento.
+
+### Critérios de aceite
+
+- Não se recebe mais do que falta do pedido, nem em envios simultâneos.
+- Recebimento grava estoque, títulos e diário juntos, ou nada.
+- As parcelas somam exatamente o valor recebido.
+- Pagar um título de compra reduz Fornecedores, não gera despesa.
+- Estorno de recebimento restaura estoque, cancela títulos e inverte o diário; é recusado se houver baixa ou se a mercadoria já saiu.
+- Pedido com mercadoria recebida não é cancelado.
+- Pedidos e recebimentos de uma organização não são vistos nem alterados por outra.

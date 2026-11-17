@@ -23,6 +23,11 @@ from fincore.application.finance import create_account, create_movement
 from fincore.application.identity import register_user
 from fincore.application.inventory import register_stock_movement
 from fincore.application.products import save_product, save_product_group, save_warehouse
+from fincore.application.purchases import (
+    approve_purchase_order,
+    create_purchase_order,
+    receive_purchase_order,
+)
 from fincore.application.titles import create_titles
 from fincore.config.database import TORTOISE_ORM
 from fincore.infrastructure.models import (
@@ -37,6 +42,9 @@ from fincore.infrastructure.models import (
     Membership,
     Product,
     ProductGroup,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseReceipt,
     ReconciliationMatch,
     StockBalance,
     StockMovement,
@@ -163,8 +171,38 @@ async def _seed_organization_a():
         occurred_on=date.today(),
         notes=f"{SECRET_NAME} movimento de estoque",
     )
+    supplier = await save_counterparty(
+        organization=organization,
+        person_type="company",
+        name=f"{SECRET_NAME} fornecedor",
+        is_supplier=True,
+    )
+    purchase_order = await create_purchase_order(
+        organization=organization,
+        user=user,
+        operation_key=uuid4(),
+        supplier_id=supplier.id,
+        warehouse_id=warehouse.id,
+        account_id=account.id,
+        order_date=date.today(),
+        items=[(product.id, Decimal("10"), Decimal("2.00"))],
+        notes=f"{SECRET_NAME} pedido",
+    )
+    await approve_purchase_order(organization, purchase_order.id)
+    purchase_item = await PurchaseOrderItem.get(order=purchase_order)
+    purchase_receipt, _ = await receive_purchase_order(
+        organization=organization,
+        user=user,
+        order_id=purchase_order.id,
+        operation_key=uuid4(),
+        received_on=date.today(),
+        quantities={purchase_item.id: Decimal("4")},
+    )
     return {
         "organization": organization,
+        "purchase_order": purchase_order,
+        "purchase_item": purchase_item,
+        "purchase_receipt": purchase_receipt,
         "stock_movement": stock_movement,
         "unit": unit,
         "group": group,
@@ -215,6 +253,15 @@ async def _snapshot(seed: dict) -> dict:
             "id", "quantity", "total_value", "movement_count"
         ),
         "stock_movements": await StockMovement.filter(organization=organization).count(),
+        "purchase_orders": await PurchaseOrder.filter(organization=organization).values(
+            "id", "status"
+        ),
+        "purchase_items": await PurchaseOrderItem.filter(order__organization=organization).values(
+            "id", "received_quantity"
+        ),
+        "purchase_receipts": await PurchaseReceipt.filter(organization=organization).values(
+            "id", "status"
+        ),
         "matches": await ReconciliationMatch.filter(
             statement_transaction__organization=organization
         ).count(),
@@ -316,6 +363,17 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
             api,
             json.dumps({"sku": "INTRUSO-C", "name": "Intruso", "unit_id": a["unit"]}),
         ),
+        ("get", f"/purchases/{a['purchase_order']}", form, None),
+        ("post", f"/purchases/{a['purchase_order']}/cancel", form, ""),
+        ("post", f"/purchases/{a['purchase_order']}/approve", form, ""),
+        (
+            "post",
+            f"/purchases/{a['purchase_order']}/receipts",
+            form,
+            f"operation_key={uuid4()}&received_on={today}&qty_{a['purchase_item']}=1",
+        ),
+        ("post", f"/purchases/receipts/{a['purchase_receipt']}/reverse", form, ""),
+        ("get", f"/api/v1/purchase-orders/{a['purchase_order']}", api, None),
         ("post", f"/stock/movements/{a['stock_movement']}/reverse", form, ""),
         (
             "post",
@@ -385,6 +443,8 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
         "/products",
         "/api/v1/stock/balances",
         "/api/v1/stock/movements",
+        "/purchases",
+        "/api/v1/purchase-orders",
     ):
         response = await asyncio.to_thread(client.get, path, headers=form)
         assert response.status_code == 200, path

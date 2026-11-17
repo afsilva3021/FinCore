@@ -1,0 +1,64 @@
+{% extends "finance/layout.html" %}
+{% block title %}{{ number }} · Compras · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">COMPRAS · PEDIDO</span><h1>{{ number }} <span class="badge {{ status_badges[order.status] }} align-middle fs-6">{{ status_labels[order.status] }}</span></h1><p>{{ order.supplier.trade_name or order.supplier.name }} · pedido em {{ order.order_date.strftime('%d/%m/%Y') }}{% if order.expected_date %} · previsão {{ order.expected_date.strftime('%d/%m/%Y') }}{% endif %}</p></div>
+  <div class="transactions-header-actions"><a class="btn btn-outline-secondary" href="/purchases">Voltar aos pedidos</a>
+    {% if order.status == 'draft' %}<form method="post" action="/purchases/{{ order.id }}/approve"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-primary" type="submit">Aprovar pedido</button></form>{% endif %}
+    {% if order.status in ['draft', 'approved'] %}<form method="post" action="/purchases/{{ order.id }}/cancel" data-confirm="Cancelar este pedido de compra?"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-outline-danger" type="submit">Cancelar pedido</button></form>{% endif %}
+  </div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<section class="title-summary" aria-label="Resumo do pedido">
+  <article class="title-summary-card"><span>Total do pedido</span><strong>R$ {{ total|brl }}</strong><small>{{ lines|length }} item(ns)</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Destino</span><strong class="fs-6">{{ order.warehouse.name }}</strong><small>depósito</small></article>
+  <article class="title-summary-card title-summary-neutral"><span>Pagamento</span><strong class="fs-6">{{ payment_labels[order.payment_method] }} · {{ order.installment_count }}x</strong><small>1ª parcela {{ order.first_due_days }} dia(s) após receber · {{ order.account.name }}</small></article>
+</section>
+
+<article class="panel-card transactions-table-card mb-3">
+  <div class="panel-heading"><div><h3>Itens</h3><p>{% if can_receive %}Informe o que chegou e registre o recebimento; pode ser em partes.{% elif order.status == 'draft' %}Aprove o pedido para poder receber a mercadoria.{% else %}Quantidades pedidas e recebidas.{% endif %}</p></div></div>
+  <form method="post" action="/purchases/{{ order.id }}/receipts">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="operation_key" value="{{ receipt_form.get('operation_key','') }}">
+    <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Produto</th><th class="text-end">Pedido</th><th class="text-end">Custo unitário</th><th class="text-end">Total</th><th class="text-end">Recebido</th><th class="text-end">Falta</th>{% if can_receive %}<th class="text-end">Receber agora</th>{% endif %}</tr></thead><tbody>
+      {% for line in lines %}
+      <tr><td><strong>{{ line.item.product.name }}</strong><small class="d-block text-secondary">{{ line.item.product.sku }}</small></td>
+        <td class="text-end text-nowrap">{{ line.item.quantity|quantity }} {{ line.item.product.unit.code }}</td>
+        <td class="text-end text-nowrap">R$ {{ line.item.unit_cost|unit_cost }}</td>
+        <td class="text-end text-nowrap">R$ {{ line.total|brl }}</td>
+        <td class="text-end text-nowrap">{{ line.item.received_quantity|quantity }}</td>
+        <td class="text-end text-nowrap">{{ line.remaining|quantity }}</td>
+        {% if can_receive %}<td class="text-end">{% if line.remaining > 0 %}<input class="form-control form-control-sm text-end ms-auto qty-input" name="qty_{{ line.item.id }}" inputmode="decimal" maxlength="20" value="{{ receipt_form.get('qty_' ~ line.item.id, line.remaining|quantity) }}" aria-label="Quantidade recebida de {{ line.item.product.name }}">{% else %}—{% endif %}</td>{% endif %}
+      </tr>
+      {% endfor %}
+    </tbody></table></div>
+    {% if can_receive %}
+    <div class="row g-2 align-items-end mt-1">
+      <div class="col-md-3"><label class="form-label" for="receipt-date">Data do recebimento</label><input class="form-control" id="receipt-date" name="received_on" type="date" max="{{ today }}" value="{{ receipt_form.get('received_on', today) }}" required></div>
+      <div class="col-md-5"><label class="form-label" for="receipt-document">Nota fiscal do fornecedor <small class="text-secondary fw-normal">(opcional)</small></label><input class="form-control" id="receipt-document" name="document_number" maxlength="60" value="{{ receipt_form.get('document_number','') }}"></div>
+      <div class="col-md-4"><button class="btn btn-primary w-100" type="submit">Registrar recebimento</button></div>
+    </div>
+    <small class="form-text d-block mt-2">O recebimento dá entrada no estoque pelo custo do pedido, gera as contas a pagar e lança no diário (estoque contra fornecedores).</small>
+    {% endif %}
+  </form>
+</article>
+
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Recebimentos</h3><p>Estornar um recebimento tira a mercadoria do estoque e cancela as contas a pagar dele.</p></div><span class="step-count">{{ receipts|length }} recebimento(s)</span></div>
+  {% if receipts %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Nº</th><th>Data</th><th>Nota fiscal</th><th class="text-end">Valor</th><th>Contas a pagar</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for receipt in receipts %}
+    <tr><td><strong>{{ receipt.number }}</strong><small class="d-block text-secondary">{{ receipt.created_by.full_name }}</small></td>
+      <td>{{ receipt.received_on.strftime('%d/%m/%Y') }}</td>
+      <td>{{ receipt.document_number or '—' }}</td>
+      <td class="text-end text-nowrap">R$ {{ receipt.total|brl }}</td>
+      <td>{% for title in titles[receipt.id] %}<small class="d-block text-nowrap">{{ title.due_date.strftime('%d/%m/%Y') }} · R$ {{ title.original_amount|brl }}{% if title.status == 'settled' %} · pago{% elif title.status == 'partial' %} · pago em parte{% elif title.status == 'cancelled' %} · cancelado{% endif %}</small>{% else %}—{% endfor %}</td>
+      <td><span class="badge {{ 'text-bg-success' if receipt.status == 'posted' else 'text-bg-secondary' }}">{{ 'Efetivado' if receipt.status == 'posted' else 'Estornado' }}</span></td>
+      <td>{% if receipt.status == 'posted' %}<form method="post" action="/purchases/receipts/{{ receipt.id }}/reverse" data-confirm="Estornar este recebimento? A mercadoria sai do estoque e as contas a pagar dele são canceladas."><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-danger" type="submit">Estornar</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="finance-empty"><span>▤</span><strong>Nenhum recebimento</strong><small>Os recebimentos deste pedido aparecem aqui.</small></div>{% endif %}
+  {% if order.notes %}<p class="text-secondary mt-3 mb-0"><strong>Observações:</strong> {{ order.notes }}</p>{% endif %}
+</article>
+{% endblock %}

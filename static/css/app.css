@@ -308,3 +308,6 @@ html[data-theme="dark"] .title-settlement>summary{color:#acd0f7;border-color:#54
 /* Perfil somente leitura: esconde ações de escrita (o servidor também bloqueia com 403). */
 .is-readonly [data-drawer-open],
 .is-readonly form[method="post"]:not([action="/logout"]) { display: none !important; }
+
+/* Compras e vendas: campo curto de quantidade dentro de tabelas. */
+.qty-input { max-width: 110px; }

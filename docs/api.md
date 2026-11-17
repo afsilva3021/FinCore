@@ -33,6 +33,11 @@ As páginas HTML são a interface principal do FinCore. Os formulários fazem va
 - `POST /stock/movements` — registra movimentação: `kind` = `opening` (saldo inicial), `entry` (ajuste de entrada), `exit` (ajuste de saída) ou `transfer`; campos `operation_key`, `product_id`, `warehouse_id`, `destination_warehouse_id` (transferência), `quantity`, `unit_cost` (entradas), `occurred_on` e `notes`. Recusa responde `400` com o motivo e o formulário preenchido.
 - `GET /stock/movements` — histórico de movimentos (filtros `product` e `warehouse`).
 - `POST /stock/movements/:movement_id/reverse` — estorna o último movimento da posição (a transferência inteira, se for o caso).
+- `GET /purchases` — pedidos de compra (filtros `q` e `status`); `POST /purchases` cria um pedido em rascunho com itens `product_N`, `quantity_N` e `unit_cost_N`.
+- `GET /purchases/:order_id` — itens, recebimentos e contas a pagar do pedido.
+- `POST /purchases/:order_id/approve`, `/cancel` — aprova o rascunho ou cancela um pedido sem mercadoria recebida.
+- `POST /purchases/:order_id/receipts` — recebimento total ou parcial (`qty_<item>`, `received_on`, `document_number`, `operation_key`): entra no estoque, gera contas a pagar e lança no diário.
+- `POST /purchases/receipts/:receipt_id/reverse` — estorna o recebimento.
 
 Sessões usam cookie assinado, HttpOnly e SameSite=Lax; formulários de alteração de estado validam token CSRF.
 
@@ -76,8 +81,10 @@ As rotas JSON usam o mesmo cookie de sessão assinado das páginas. Listas sempr
 | GET | `/api/v1/stock/movements` | `limit`, `offset`, `product_id`, `warehouse_id` | `{items:[movimento],limit,offset,total}`, do mais recente para o mais antigo |
 | POST | `/api/v1/stock/movements` | JSON `{type,operation_key,product_id,warehouse_id,quantity,occurred_on,unit_cost?,destination_warehouse_id?,notes?}`; `type` = `opening\|entry\|exit\|transfer`; `quantity` e `unit_cost` são strings decimais | `201 {items:[...]}` (dois movimentos numa transferência); reenvio com a mesma chave = `200` com os mesmos movimentos; regra violada ou saldo insuficiente = `400 invalid_stock_movement`; chave de outra organização = `409 conflict` |
 | POST | `/api/v1/stock/movements/{id}/reverse` | sem payload | `201 {items:[estornos]}`; movimento que não é o último, já estornado ou que é um estorno = `409 invalid_state` |
+| GET | `/api/v1/purchase-orders` | `limit`, `offset`, `status` | `{items:[pedido com itens e total],limit,offset,total}` |
+| GET | `/api/v1/purchase-orders/{id}` | UUID do pedido | Pedido com `items[]` (`quantity`, `unit_cost`, `received_quantity`) ou 404 |
 
-A especificação OpenAPI 3.1 dos endpoints de títulos, produtos, estoque e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
+A especificação OpenAPI 3.1 dos endpoints de títulos, produtos, estoque, compras e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
 
 ### Sessão, CSRF e escrita
 
@@ -143,4 +150,4 @@ O cadastro recebe contraparte, descrição, valor total, emissão/vencimento ini
 
 ## Autorização por perfil
 
-Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que confere o perfil contra a área da rota (exceto `/login`, `/register` e `/logout`). Rotas de cadastros de produto (`/products`, `/product-settings`, `/api/v1/products`) e de estoque (`/stock`, `/api/v1/stock`) exigem `owner` ou `stock`; todas as outras exigem `owner` ou `finance`. Perfil `viewer` e perfis de outra área recebem `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.
+Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que confere o perfil contra a área da rota (exceto `/login`, `/register` e `/logout`). Rotas de cadastros de produto (`/products`, `/product-settings`, `/api/v1/products`) e de estoque (`/stock`, `/api/v1/stock`) exigem `owner` ou `stock`; compras (`/purchases`, `/api/v1/purchase-orders`) exigem `owner` ou `purchasing`; contatos (`/contacts`) aceitam `owner`, `finance` e `purchasing`; todas as outras exigem `owner` ou `finance`. Perfil `viewer` e perfis de outra área recebem `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.

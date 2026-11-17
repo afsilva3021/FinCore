@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from tortoise import connections
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
@@ -169,15 +170,18 @@ def _validated_notes(notes: str) -> str | None:
 
 
 async def _ensure_balance(organization: Organization, product_id: UUID, warehouse_id: UUID) -> UUID:
-    """Garante a linha de posição (fora da transação principal) e devolve o ID dela."""
-    filters = {"product_id": product_id, "warehouse_id": warehouse_id}
-    existing = await StockBalance.get_or_none(**filters)
-    if existing is None:
-        try:
-            existing = await StockBalance.create(organization=organization, **filters)
-        except IntegrityError:
-            existing = await StockBalance.get(**filters)
-    return existing.id
+    """Garante a linha de posição e devolve o ID dela.
+
+    Usa `ON CONFLICT DO NOTHING` para poder rodar dentro de uma transação sem abortá-la
+    quando outro envio cria a mesma linha ao mesmo tempo.
+    """
+    await connections.get("default").execute_query(
+        'INSERT INTO "stockbalance" (id, organization_id, product_id, warehouse_id, quantity, '
+        "total_value, movement_count, updated_at) VALUES ($1, $2, $3, $4, 0, 0, 0, now()) "
+        "ON CONFLICT (product_id, warehouse_id) DO NOTHING",
+        [uuid4(), organization.id, product_id, warehouse_id],
+    )
+    return (await StockBalance.get(product_id=product_id, warehouse_id=warehouse_id)).id
 
 
 async def _locked_balances(balance_ids: list[UUID]) -> dict[UUID, StockBalance]:
@@ -203,6 +207,8 @@ async def _record(
     transfer_id: UUID | None = None,
     reversal_of: StockMovement | None = None,
     journal_entry: JournalEntry | None = None,
+    source_type: str | None = None,
+    source_id: UUID | None = None,
 ) -> StockMovement:
     """Atualiza a posição bloqueada e grava o movimento com a fotografia do saldo."""
     balance.quantity = applied.position.quantity
@@ -228,6 +234,8 @@ async def _record(
         transfer_id=transfer_id,
         reversal_of=reversal_of,
         journal_entry=journal_entry,
+        source_type=source_type,
+        source_id=source_id,
     )
 
 
@@ -430,6 +438,7 @@ async def reverse_stock_movement(
                 already_reversed=await StockMovement.filter(reversal_of_id=leg.id).exists(),
                 sequence=leg.sequence,
                 last_sequence=balance.movement_count,
+                from_document=leg.source_type is not None,
             )
             undo = undo_entry if leg.direction == IN else undo_exit
             applied = undo(_position(balance), leg.quantity, leg.total_cost)
@@ -467,3 +476,136 @@ async def reverse_stock_movement(
                 )
             )
     return reversals
+
+
+# --- Movimentos gerados por documentos (compras e vendas) -----------------------------
+
+
+async def post_document_movements(
+    *,
+    organization: Organization,
+    user: User,
+    direction: str,
+    reason: str,
+    lines: list[tuple[Product, UUID, Decimal, Decimal]],
+    occurred_on: date,
+    source_type: str,
+    source_id: UUID,
+) -> list[StockMovement]:
+    """Entradas ou saídas de um documento. **Chame dentro da transação do documento.**
+
+    Cada linha é (produto com a unidade carregada, depósito, quantidade, custo unitário);
+    nas saídas o custo é ignorado e vale o custo médio. Não lança no diário: o documento
+    faz o próprio lançamento. Devolve os movimentos na ordem das linhas.
+    """
+    balance_ids = []
+    for product, warehouse_id, quantity, _ in lines:
+        if not product.tracks_stock:
+            raise ValueError(f"{product.name} não controla estoque.")
+        fit_quantity_to_unit(quantity, product.unit.decimal_places)
+        balance_ids.append(await _ensure_balance(organization, product.id, warehouse_id))
+    balances = await _locked_balances(balance_ids)
+    movements = []
+    for (product, _, quantity, unit_cost), balance_id in zip(lines, balance_ids, strict=True):
+        balance = balances[balance_id]
+        try:
+            if direction == IN:
+                applied = apply_entry(_position(balance), quantity, unit_cost)
+            else:
+                applied = apply_exit(_position(balance), quantity)
+        except InsufficientStock as error:
+            raise _insufficient(product, error) from None
+        movements.append(
+            await _record(
+                balance=balance,
+                organization=organization,
+                user=user,
+                direction=direction,
+                reason=reason,
+                quantity=quantity,
+                applied=applied,
+                occurred_on=occurred_on,
+                notes=None,
+                source_type=source_type,
+                source_id=source_id,
+            )
+        )
+    return movements
+
+
+async def revert_document_movements(
+    *,
+    organization: Organization,
+    user: User,
+    movements: list[StockMovement],
+    occurred_on: date,
+) -> list[StockMovement]:
+    """Desfaz os movimentos de um documento. **Chame dentro da transação do documento.**
+
+    Entradas saem pela mesma quantidade e valor (recusa se o estoque já foi consumido);
+    saídas voltam pelo valor com que saíram. Diferente do estorno manual, não exige que
+    o movimento seja o último da posição.
+    """
+    balance_ids = {
+        movement.id: await _ensure_balance(organization, movement.product_id, movement.warehouse_id)
+        for movement in movements
+    }
+    balances = await _locked_balances(list(balance_ids.values()))
+    reversals = []
+    for movement in movements:
+        balance = balances[balance_ids[movement.id]]
+        undo = undo_entry if movement.direction == IN else undo_exit
+        try:
+            applied = undo(_position(balance), movement.quantity, movement.total_cost)
+        except ValueError:
+            raise ValueError(
+                "Parte desta mercadoria já saiu do estoque; não é possível desfazer a entrada."
+            ) from None
+        reversals.append(
+            await _record(
+                balance=balance,
+                organization=organization,
+                user=user,
+                direction=OUT if movement.direction == IN else IN,
+                reason=REVERSAL,
+                quantity=movement.quantity,
+                applied=applied,
+                occurred_on=occurred_on,
+                notes=None,
+                reversal_of=movement,
+                source_type=movement.source_type,
+                source_id=movement.source_id,
+            )
+        )
+    return reversals
+
+
+async def ensure_document_ledger_account(
+    organization: Organization, user: User, spec: tuple[str, str, str]
+) -> LedgerAccount:
+    """Conta contábil de sistema usada pelos documentos (cria na primeira vez)."""
+    return await _ledger_account(organization, user, spec)
+
+
+async def post_document_journal(
+    *,
+    organization: Organization,
+    user: User,
+    entry_date: date,
+    description: str,
+    debit_account_id: UUID,
+    credit_account_id: UUID,
+    amount: Decimal,
+    reversal_of: JournalEntry | None = None,
+) -> JournalEntry | None:
+    """Lançamento efetivado de duas linhas para um documento (None se o valor for zero)."""
+    return await _post_journal(
+        organization=organization,
+        user=user,
+        entry_date=entry_date,
+        description=description,
+        debit_account_id=debit_account_id,
+        credit_account_id=credit_account_id,
+        amount=amount,
+        reversal_of=reversal_of,
+    )

@@ -1,6 +1,6 @@
 # FinCore ERP — roteiro de transformação
 
-> **Situação: aprovado em 2026-11-17.** Fases 8 e 9 concluídas; fases 10 a 13 pendentes. Cada fase segue o fluxo do `AGENTS.md` (regra, testes, migration, documentação) e o que foi validado fica em `docs/progress.md`.
+> **Situação: aprovado em 2026-11-17.** Fases 8, 9 e 10 concluídas; fases 11 a 13 pendentes. Cada fase segue o fluxo do `AGENTS.md` (regra, testes, migration, documentação) e o que foi validado fica em `docs/progress.md`.
 
 ## 1. Objetivo e escopo
 
@@ -12,7 +12,7 @@ Módulos novos, na ordem de entrega:
 |---|---|---|
 | 8 | Cadastros de produto ✅ | Produtos, unidades, grupos e depósitos |
 | 9 | Estoque ✅ | Entradas, saídas, ajustes, transferências, saldo e custo médio |
-| 10 | Compras | Pedido de compra → recebimento → estoque + contas a pagar |
+| 10 | Compras ✅ | Pedido de compra → recebimento → estoque + contas a pagar |
 | 11 | Vendas | Orçamento → pedido → faturamento → baixa de estoque + contas a receber |
 | 12 | CRM | Leads, funil de oportunidades e atividades ligados a vendas |
 | 13 | Fiscal (simulado) | Documento fiscal interno com dados tributários, sem SEFAZ |
@@ -89,7 +89,7 @@ Aceite: saldo sempre igual à soma dos movimentos; saída sem saldo recusada inc
 
 Regra acrescentada na implementação: só o último movimento de uma posição pode ser estornado (o passado é corrigido por ajuste).
 
-### Fase 10 — Compras
+### Fase 10 — Compras (concluída)
 
 - `PurchaseOrder` e `PurchaseOrderItem`: fornecedor, itens, quantidades, custo, condição de pagamento. Estados: rascunho → aprovado → recebido parcial → recebido → cancelado.
 - `PurchaseReceipt` e `PurchaseReceiptItem`: recebimento total ou parcial; gera, de forma atômica, movimentos de estoque, títulos a pagar (com parcelas) e lançamento contábil.
@@ -139,4 +139,6 @@ Aceite: totais do documento batem com o faturamento; numeração sem buracos nem
 
 ## 7. Próximo passo
 
-**Fase 10 (compras):** pedido de compra, recebimento total ou parcial com entrada em estoque (motivo `purchase`) e títulos a pagar lançados por competência (D Estoque / C Fornecedores). É a primeira fase que muda `FinancialTitle` (origem do título) e `settle_title`.
+**Fase 10 (compras):** pedido de compra, recebimento total ou parcial com entrada em estoque (motivo `purchase`) e títulos a pagar lançados por competência (D Estoque / C Fornecedores). Concluída.
+
+**Fase 11 (vendas):** orçamento, pedido e faturamento com baixa de estoque, receita, CMV e contas a receber.

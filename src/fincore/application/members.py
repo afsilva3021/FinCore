@@ -12,21 +12,28 @@ ROLE_LABELS = {
     "owner": "Proprietário",
     "finance": "Financeiro",
     "stock": "Estoque",
+    "purchasing": "Compras",
     "viewer": "Somente leitura",
 }
 ROLE_DESCRIPTIONS = {
     "owner": "Tudo, inclusive gerenciar membros e perfis.",
     "finance": "Cadastra e altera dados financeiros e contábeis; não gerencia membros.",
     "stock": "Cadastra produtos e depósitos e movimenta o estoque; consulta o restante.",
+    "purchasing": "Cria pedidos de compra, recebe mercadoria e cadastra fornecedores.",
     "viewer": "Consulta telas e relatórios; não altera nada.",
 }
 # Áreas de escrita. Cada perfil altera só as áreas listadas; a leitura é comum a todos.
 AREA_FINANCE = "finance"
 AREA_CATALOG = "catalog"
 AREA_INVENTORY = "inventory"
+AREA_PURCHASING = "purchasing"
+AREA_CONTACTS = "contacts"
 ROLE_WRITE_AREAS: dict[str, frozenset[str]] = {
-    "owner": frozenset({AREA_FINANCE, AREA_CATALOG, AREA_INVENTORY}),
-    "finance": frozenset({AREA_FINANCE}),
+    "owner": frozenset(
+        {AREA_FINANCE, AREA_CATALOG, AREA_INVENTORY, AREA_PURCHASING, AREA_CONTACTS}
+    ),
+    "finance": frozenset({AREA_FINANCE, AREA_CONTACTS}),
+    "purchasing": frozenset({AREA_PURCHASING, AREA_CONTACTS}),
     "stock": frozenset({AREA_CATALOG, AREA_INVENTORY}),
     "viewer": frozenset(),
 }

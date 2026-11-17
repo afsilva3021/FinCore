@@ -18,6 +18,7 @@ from fincore.infrastructure.models import (
     JournalEntryLine,
     LedgerAccount,
     Organization,
+    TitleSettlement,
     User,
 )
 
@@ -591,6 +592,14 @@ async def reverse_movement(
                 raise ValueError("A transferência original está incompleta.")
         if await FinancialTransaction.filter(reversal_of=original).exists():
             raise ValueError("Esta movimentação já possui estorno.")
+        if await TitleSettlement.filter(
+            financial_transaction=original, title__origin__not="manual"
+        ).exists():
+            # A baixa quitou Fornecedores/Clientes; o estorno comum lançaria como despesa.
+            raise ValueError(
+                "Esta movimentação é a baixa de um título de compra ou venda e não pode ser "
+                "estornada por aqui."
+            )
         if await FinancialTransaction.exists(operation_key=operation_key):
             raise ValueError("Esta chave de operação já foi utilizada.")
 

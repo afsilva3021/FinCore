@@ -120,10 +120,11 @@ Consulte `README.md`, `docs/progress.md`, `docs/api.md` e os testes antes de dec
 - Exportação de relatório CSV/PDF e simuladores locais sem integrações externas reais.
 - API JSON `/api/v1` para sessão, contas, categorias, transações e títulos (listar, detalhar, cadastrar com parcelas, baixar e cancelar, com idempotência por `operation_key`). Contrato em `docs/api.md` e `docs/openapi.yaml`.
 - Cadastros de produto (fase 8): produtos, grupos, unidades de medida e depósitos, com páginas `/products` e `/product-settings` e API `/api/v1/products`. 
-- Estoque (fase 9): `StockMovement` imutável e `StockBalance` como cache da posição, custo médio ponderado, entrada/saída/transferência/estorno em `application/inventory.py`, páginas `/stock` e `/stock/movements`, API `/api/v1/stock` e lançamento contábil dos ajustes (`docs/accounting.md`). **Compras, vendas, CRM e fiscal ainda não existem.** Compras e vendas devem movimentar o estoque pelos casos de uso de `application/inventory.py` (motivos `purchase` e `sale`), nunca gravando `StockMovement` ou `StockBalance` direto.
-- Perfis `owner`, `finance`, `stock` e `viewer`, com permissão de escrita por área (financeiro, cadastros de produto e estoque) (`ROLE_WRITE_AREAS` em `application/members.py` e `write_area` em `presentation/web.py`). Toda rota nova de um módulo do ERP precisa ser classificada em `write_area`; sem isso ela fica na área financeira.
+- Estoque (fase 9): `StockMovement` imutável e `StockBalance` como cache da posição, custo médio ponderado, entrada/saída/transferência/estorno em `application/inventory.py`, páginas `/stock` e `/stock/movements`, API `/api/v1/stock` e lançamento contábil dos ajustes (`docs/accounting.md`). Documentos (compras, vendas) movimentam o estoque por `post_document_movements`/`revert_document_movements`, nunca gravando `StockMovement` ou `StockBalance` direto.
+- Compras (fase 10): `PurchaseOrder`/`PurchaseReceipt` em `application/purchases.py`; o recebimento grava estoque, títulos a pagar (`create_document_titles`, origem `purchase`) e diário por competência numa única transação; páginas `/purchases` e API de consulta `/api/v1/purchase-orders`. Numeração por `next_document_number`. **Vendas, CRM e fiscal ainda não existem.**
+- Perfis `owner`, `finance`, `stock`, `purchasing` e `viewer`, com permissão de escrita por área (financeiro, contatos, cadastros de produto, estoque e compras) (`ROLE_WRITE_AREAS` em `application/members.py` e `write_area` em `presentation/web.py`). Toda rota nova de um módulo do ERP precisa ser classificada em `write_area`; sem isso ela fica na área financeira.
 
-Entidades Tortoise existentes: `Organization`, `User`, `Membership`, `FinancialAccount`, `Category`, `FinancialTransaction`, `Counterparty`, `FinancialTitle`, `TitleSettlement`, `LedgerAccount`, `JournalEntry`, `JournalEntryLine`, `ImportedStatementTransaction`, `ReconciliationMatch`, `ReconciliationEvent`, `ProductGroup`, `UnitOfMeasure`, `Product`, `Warehouse`, `StockMovement` e `StockBalance`. Seus vínculos e responsabilidades estão no README e `src/fincore/infrastructure/models.py`. Não duplicar entidades antes de inspecionar o modelo e migrations.
+Entidades Tortoise existentes: `Organization`, `User`, `Membership`, `FinancialAccount`, `Category`, `FinancialTransaction`, `Counterparty`, `FinancialTitle`, `TitleSettlement`, `LedgerAccount`, `JournalEntry`, `JournalEntryLine`, `ImportedStatementTransaction`, `ReconciliationMatch`, `ReconciliationEvent`, `ProductGroup`, `UnitOfMeasure`, `Product`, `Warehouse`, `StockMovement`, `StockBalance`, `DocumentSequence`, `PurchaseOrder`, `PurchaseOrderItem`, `PurchaseReceipt` e `PurchaseReceiptItem`. Seus vínculos e responsabilidades estão no README e `src/fincore/infrastructure/models.py`. Não duplicar entidades antes de inspecionar o modelo e migrations.
 
 Não recrie módulos funcionais já existentes nem mude seus contratos sem necessidade. Não assuma que todos os checkboxes do README indicam conclusão; confirme progress.md e testes. Recursos simulados, incompletos ou bloqueados precisam continuar explicitamente identificados.
 
@@ -139,6 +140,8 @@ Regras para as fases 8 a 13; detalhes e modelo de dados em `docs/erp-roadmap.md`
 - Parâmetros da URL são lidos por `_query(request)` (`presentation/web.py`), que decodifica o valor; não use `request.query_params` direto nas rotas.
 - Estoque negativo é bloqueado, com bloqueio de linha contra saídas simultâneas. Custeio por custo médio ponderado móvel.
 - Documento que gera estoque, título e diário grava tudo em uma única transação PostgreSQL ou não grava nada, e aceita `operation_key`.
+- Funções chamadas por documentos (`post_document_movements`, `create_document_titles`, `next_document_number`) não abrem transação: o documento abre uma só e bloqueia a própria linha primeiro. Contas contábeis de sistema são garantidas antes de abrir a transação.
+- Títulos de documento (`origin` diferente de `manual`) só são cancelados pelo estorno do documento, e a baixa deles quita a conta de contrapartida.
 - Títulos gerados por compra ou venda lançam por competência (estoque/fornecedores, clientes/receita, CMV/estoque); títulos avulsos continuam lançando só na liquidação. Documentar em `docs/accounting.md` ao implementar.
 - Fiscal é somente simulação: dados tributários informados pelo usuário, sem XML válido, assinatura ou transmissão à SEFAZ, e a interface diz isso.
 
@@ -191,7 +194,7 @@ https://github.com/firefly-iii/firefly-iii
 - Interface responsiva em pt-BR, com acessibilidade básica, estados de carregamento e mensagens de erro claras.
 - Não expor funcionalidades como prontas na interface quando forem apenas simuladas; sinalizar claramente o ambiente de demonstração.
 - A interface atual é renderizada no servidor com Robyn/Jinja/Bootstrap. Formulários seguem sessão e CSRF; mensagens de confirmação usam modal da interface, não `alert()`/`confirm()` nativos do JavaScript.
-- Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports`, `/integrations`, `/members`, `/products`, `/product-settings`, `/stock` e `/stock/movements`. Verifique `docs/api.md` para métodos e limites completos.
+- Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports`, `/integrations`, `/members`, `/products`, `/product-settings`, `/stock`, `/stock/movements` e `/purchases`. Verifique `docs/api.md` para métodos e limites completos.
 - Títulos têm páginas HTML (`/payables`, `/receivables`, `/titles/...`) e API JSON (`/api/v1/titles`). Mudanças na API de títulos atualizam `docs/openapi.yaml` e devem continuar passando no `openapi-spec-validator`.
 
 ## 6. Segurança mínima obrigatória
@@ -254,7 +257,7 @@ Concluir uma fase com testes e documentação antes de iniciar a próxima:
 7. **Integrações simuladas:** interfaces para Pix, boletos, cartões, webhooks e Open Finance com mocks, documentação e testes; produção fica fora de escopo sem requisitos próprios.
 8. **Cadastros de produto (concluída):** produtos, grupos, unidades de medida e depósitos.
 9. **Estoque (concluída):** movimentos imutáveis, saldo derivado, custo médio, ajustes e transferências entre depósitos.
-10. **Compras:** pedido de compra, recebimento, entrada em estoque e contas a pagar.
+10. **Compras (concluída):** pedido de compra, recebimento, entrada em estoque e contas a pagar.
 11. **Vendas:** orçamento, pedido, faturamento, baixa de estoque e contas a receber.
 12. **CRM:** leads, funil de oportunidades e atividades ligados a vendas.
 13. **Fiscal (simulado):** documento fiscal interno com dados tributários informados, sem SEFAZ.
