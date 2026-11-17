@@ -57,6 +57,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-17 | `render.yaml` para publicar uma demonstração online no plano gratuito do Render (aplicação + PostgreSQL, com dados fictícios); instruções na Opção C da instalação. |
 | 2026-11-17 | Início da transformação em ERP ([roteiro](docs/erp-roadmap.md)). Fase 8: cadastros de produto — produtos, grupos, unidades de medida e depósitos em `/products` e `/product-settings`, API `/api/v1/products`, perfil **Estoque** e permissão de escrita por área. Migration `0019`. Correção: marcadores de conflito de merge removidos de `docs/progress.md`. |
 | 2026-11-06 | Sugestão de categoria por aprendizado com o histórico (Naive Bayes, sem serviço externo), comando `fincore-seed-demo`, screenshots no README e ações de escrita escondidas para o perfil somente leitura. Correção: o painel "Saldos por conta" da visão geral sempre dizia "Nenhuma conta cadastrada" (a rota não enviava os saldos ao template); o perfil exibia "Administrador" fixo. |
 | 2026-11-06 | API JSON de títulos (`/api/v1/titles`: listar, detalhar, cadastrar com parcelas, baixar, cancelar) com idempotência por `operation_key` e especificação OpenAPI em `docs/openapi.yaml`. Correção: reenvio de baixa com chave de outra organização agora é conflito `409` em vez de devolver a baixa alheia. Migration `0018`. |
@@ -354,6 +355,22 @@ uv run ruff format --check .
 node --check static/js/app.js
 ```
 
+### Opção C — demonstração online no Render (link público para testar)
+
+O arquivo [`render.yaml`](render.yaml) descreve uma instância de demonstração no plano gratuito do [Render](https://render.com): a aplicação a partir do `Dockerfile` e um PostgreSQL 16 gerenciado. Com uma conta no Render ligada ao GitHub, abra o link, confira os dois serviços e confirme:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/afsilva3021/FinCore)
+
+Para publicar uma branch que ainda não está na `main`, acrescente `/tree/<branch>` ao endereço do repositório no link. Ao terminar, o Render mostra o endereço `https://<nome>.onrender.com`; o login de demonstração é `demo@fincore.example` / `Paes-Quentinhos-2026`.
+
+É uma demonstração, **não** uma configuração de produção:
+
+- o banco gratuito expira 30 dias depois de criado e o serviço dorme após 15 minutos sem acesso (a primeira página depois disso demora cerca de um minuto);
+- a aplicação conecta com o usuário dono do banco, sem o usuário restrito do `compose.yaml`;
+- o login de demonstração é público: não cadastre dados reais.
+
+O comando de início (migrations, seed e aplicação) foi validado localmente contra um PostgreSQL limpo; a publicação no Render em si não foi executada por quem escreveu o arquivo.
+
 ## Migrations e preservação dos dados
 
 - A sequência versionada fica em `src/fincore/infrastructure/migrations/`.
@@ -382,6 +399,7 @@ static/js/                        drawer, confirmações modais e interações
 Dockerfile                        imagem da aplicação (sem root, só leitura)
 compose.yaml                      app, migrate, db (rede interna) e db-test
 compose.dev.yaml                  só dev: publica o banco em 127.0.0.1:5433
+render.yaml                       demonstração online no Render (não é produção)
 docs/                             requisitos, contratos, contabilidade e decisões
 tests/unit/                       regras de domínio sem banco e testes de arquitetura
 tests/integration/                persistência PostgreSQL e fluxos HTTP

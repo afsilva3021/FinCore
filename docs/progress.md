@@ -203,3 +203,10 @@ Primeira fase do roteiro em [erp-roadmap.md](erp-roadmap.md). Não há estoque, 
 - [ ] `infrastructure/models.py` continua em arquivo único; a divisão por área proposta no roteiro fica para depois, porque o teste de arquitetura lê esse arquivo.
 
 Próximo passo: fase 9 (estoque) — movimentos imutáveis, saldo derivado, custo médio e lançamento contábil dos ajustes.
+
+## Demonstração online (2026-11-17)
+
+- [x] `render.yaml`: aplicação pelo `Dockerfile` e PostgreSQL 16 no plano gratuito do Render, com `AUTH_SECRET` gerado, `SECURE_COOKIES=true` e seed de demonstração na primeira subida.
+- [x] Comando de início validado localmente com URL `postgresql://` em banco limpo: primeira subida aplica 0001→0019, cria o seed e responde `/health`; segunda subida mantém os dados e sobe normalmente.
+- [ ] Não validado: a publicação no Render (exige a conta do responsável). O build da imagem também não foi executado neste ambiente.
+

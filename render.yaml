@@ -1,0 +1,50 @@
+# Demonstração online do FinCore no Render (https://render.com), plano gratuito.
+#
+# NÃO é configuração de produção. Diferenças em relação ao compose.yaml:
+#   - a aplicação conecta com o usuário dono do banco (o plano gratuito cria um só
+#     usuário), então não há o usuário restrito sem DDL;
+#   - as migrations rodam no próprio comando de início, antes de a aplicação subir;
+#   - o banco gratuito expira 30 dias depois de criado e o serviço dorme após 15 min
+#     sem acesso (a primeira requisição depois disso demora cerca de um minuto);
+#   - TRUSTED_PROXIES fica vazio, então o limite de tentativas de login por IP enxerga
+#     o proxy do Render como um único cliente.
+#
+# Os dados fictícios de `fincore-seed-demo` são criados na primeira subida. O login de
+# demonstração é público (está no README): não cadastre dados reais nesta instância.
+
+databases:
+  - name: fincore-demo-db
+    plan: free
+    databaseName: fincore
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: fincore-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    # O seed recusa rodar duas vezes; nas subidas seguintes a falha dele é esperada.
+    dockerCommand: >-
+      sh -c "tortoise -c fincore.config.database.TORTOISE_ORM migrate
+      && (fincore-seed-demo || echo 'Seed de demonstração não aplicado (já existe ou falhou).')
+      && exec fincore"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fincore-demo-db
+          property: connectionString
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: APP_PORT
+        value: "10000"
+      - key: SECURE_COOKIES
+        value: "true"
+      - key: FINCORE_ALLOW_DEMO_SEED
+        value: "1"
+      - key: LOG_LEVEL
+        value: INFO
