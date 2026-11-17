@@ -6,7 +6,8 @@ info:
     API JSON do FinCore. Autenticação por cookie de sessão (faça login em /login);
     toda requisição de escrita exige o header `X-CSRF-Token` com o token de
     `GET /api/v1/session`. Valores monetários são strings decimais com ponto ("250.00").
-    Perfil `viewer` recebe 403 em qualquer escrita.
+    Perfil `viewer` recebe 403 em qualquer escrita; produtos exigem perfil `owner` ou
+    `stock`, e as demais escritas, `owner` ou `finance`.
 servers:
   - url: http://127.0.0.1:8080
 security:
@@ -35,6 +36,11 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    ProductId:
+      name: product_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     TransactionId:
       name: transaction_id
       in: path
@@ -55,6 +61,48 @@ components:
           properties:
             code: {type: string, examples: [invalid_title]}
             message: {type: string}
+    Quantity:
+      type: string
+      pattern: '^\d+(\.\d{1,4})?$'
+      examples: ["2.5000"]
+    Product:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        sku: {type: string, examples: [CAM-001]}
+        name: {type: string}
+        description: {type: [string, "null"]}
+        barcode: {type: [string, "null"], description: GTIN-8/12/13/14}
+        ncm: {type: [string, "null"], description: Referência informada; não é conferida na tabela oficial.}
+        unit:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+            code: {type: string, examples: [UN]}
+        group:
+          type: [object, "null"]
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+        sale_price: {$ref: '#/components/schemas/Money'}
+        currency: {type: string, examples: [BRL]}
+        min_stock: {$ref: '#/components/schemas/Quantity'}
+        tracks_stock: {type: boolean}
+        is_active: {type: boolean}
+    ProductCreate:
+      type: object
+      required: [sku, name, unit_id]
+      properties:
+        sku: {type: string, maxLength: 40, description: "Letras, números e . _ / -; gravado em maiúsculas."}
+        name: {type: string, maxLength: 160}
+        unit_id: {type: string, format: uuid}
+        group_id: {type: [string, "null"], format: uuid}
+        description: {type: [string, "null"], maxLength: 2000}
+        barcode: {type: [string, "null"]}
+        ncm: {type: [string, "null"]}
+        sale_price: {$ref: '#/components/schemas/Money'}
+        min_stock: {$ref: '#/components/schemas/Quantity'}
+        tracks_stock: {type: boolean, default: true}
     Title:
       type: object
       properties:
@@ -131,7 +179,7 @@ components:
       description: Sessão ausente ou expirada.
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
     Forbidden:
-      description: CSRF inválido ou perfil somente leitura.
+      description: CSRF inválido ou perfil sem permissão de escrita nesta área.
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
     NotFound:
       description: Registro inexistente ou de outra organização.
@@ -159,6 +207,56 @@ paths:
             application/json:
               schema: {type: object, properties: {csrf_token: {type: string}}}
         "401": {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/products:
+    get:
+      summary: Lista produtos
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+        - {name: q, in: query, description: "Código, descrição ou código de barras.", schema: {type: string}}
+        - {name: status, in: query, schema: {type: string, enum: [all, active, inactive], default: all}}
+      responses:
+        "200":
+          description: Página de produtos da organização.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Product'}}
+                  limit: {type: integer}
+                  offset: {type: integer}
+                  total: {type: integer}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      summary: Cadastra produto
+      description: SKU e código de barras são únicos por organização. Não cria estoque.
+      security: [{session: [], csrf: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ProductCreate'}}}
+      responses:
+        "201":
+          description: Produto criado.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Product'}}}
+        "400": {$ref: '#/components/responses/Invalid'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "409":
+          description: Já existe produto com este SKU ou código de barras.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+  /api/v1/products/{product_id}:
+    get:
+      summary: Detalha um produto
+      parameters:
+        - {$ref: '#/components/parameters/ProductId'}
+      responses:
+        "200":
+          description: Produto.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Product'}}}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "404": {$ref: '#/components/responses/NotFound'}
   /api/v1/titles:
     get:
       summary: Lista títulos a pagar/receber

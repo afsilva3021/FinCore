@@ -18,8 +18,9 @@ from fincore.application.finance import (
 )
 from fincore.application.identity import register_user
 from fincore.application.members import add_member
+from fincore.application.products import save_product, save_product_group, save_warehouse
 from fincore.application.titles import create_titles, settle_title
-from fincore.infrastructure.models import Membership, User
+from fincore.infrastructure.models import Membership, UnitOfMeasure, User
 
 DEMO_ORGANIZATION = "Padaria Exemplo (dados fictícios)"
 DEMO_EMAIL = "demo@fincore.example"
@@ -40,6 +41,15 @@ INCOME = [
     ("Encomenda bolo de casamento", "Encomendas", "1600.00"),
     ("Vendas cartão maquininha", "Vendas balcão", "5300.00"),
     ("Encomenda coffee break empresa", "Encomendas", "2100.00"),
+]
+# (código, descrição, grupo, unidade, preço de venda, estoque mínimo)
+PRODUCTS = [
+    ("PAO-FRANCES", "Pão francês", "Pães", "KG", "18.90", "5"),
+    ("PAO-QUEIJO", "Pão de queijo", "Pães", "KG", "49.90", "2.5"),
+    ("BOLO-CENOURA", "Bolo de cenoura com chocolate", "Confeitaria", "UN", "38.00", "2"),
+    ("SONHO-CREME", "Sonho de creme", "Confeitaria", "UN", "7.50", "12"),
+    ("CAFE-COADO", "Café coado 200 ml", "Bebidas", "UN", "5.00", "0"),
+    ("SUCO-LARANJA", "Suco de laranja 1 L", "Bebidas", "L", "16.00", "3"),
 ]
 
 
@@ -143,4 +153,22 @@ async def seed_demo(today: date | None = None) -> str:
         payment_terms="cash",
         installment_count=1,
     )
+    await save_warehouse(organization=organization, user=owner, code="VITRINE", name="Vitrine")
+    units = {unit.code: unit for unit in await UnitOfMeasure.filter(organization=organization)}
+    groups = {}
+    for name in sorted({group for _, _, group, _, _, _ in PRODUCTS}):
+        groups[name] = await save_product_group(organization=organization, user=owner, name=name)
+    for sku, name, group, unit, price, min_stock in PRODUCTS:
+        await save_product(
+            organization=organization,
+            user=owner,
+            sku=sku,
+            name=name,
+            group_id=groups[group].id,
+            unit_id=units[unit].id,
+            sale_price=Decimal(price),
+            min_stock=Decimal(min_stock),
+            # Café coado é feito na hora: não tem estoque a controlar.
+            tracks_stock=sku != "CAFE-COADO",
+        )
     return DEMO_EMAIL

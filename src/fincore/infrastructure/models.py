@@ -377,3 +377,93 @@ class ReconciliationEvent(Model):
     )
     action = fields.CharField(max_length=12)
     occurred_at = fields.DatetimeField(auto_now_add=True)
+
+
+# --- Cadastros de produto (ERP, fase 8) -------------------------------------------------
+
+
+class ProductGroup(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="product_groups", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_product_groups", null=True, on_delete=fields.SET_NULL
+    )
+    parent = fields.ForeignKeyField(
+        "models.ProductGroup", related_name="children", null=True, on_delete=fields.RESTRICT
+    )
+    name = fields.CharField(max_length=120)
+    is_active = fields.BooleanField(default=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "name"),)
+
+
+class UnitOfMeasure(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="units_of_measure", on_delete=fields.CASCADE
+    )
+    code = fields.CharField(max_length=6)
+    name = fields.CharField(max_length=60)
+    # Casas decimais aceitas nas quantidades desta unidade (0 = só inteiros).
+    decimal_places = fields.SmallIntField(default=0)
+    is_active = fields.BooleanField(default=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "code"),)
+
+
+class Warehouse(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="warehouses", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_warehouses", null=True, on_delete=fields.SET_NULL
+    )
+    code = fields.CharField(max_length=20)
+    name = fields.CharField(max_length=120)
+    # Exatamente um depósito padrão por organização (índice único parcial no banco).
+    is_default = fields.BooleanField(default=False)
+    is_active = fields.BooleanField(default=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("organization", "code"),)
+
+
+class Product(Model):
+    id = fields.UUIDField(primary_key=True, default=uuid4)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="products", on_delete=fields.CASCADE
+    )
+    created_by = fields.ForeignKeyField(
+        "models.User", related_name="created_products", on_delete=fields.RESTRICT
+    )
+    group = fields.ForeignKeyField(
+        "models.ProductGroup", related_name="products", null=True, on_delete=fields.RESTRICT
+    )
+    unit = fields.ForeignKeyField(
+        "models.UnitOfMeasure", related_name="products", on_delete=fields.RESTRICT
+    )
+    sku = fields.CharField(max_length=40)
+    name = fields.CharField(max_length=160)
+    description = fields.TextField(null=True)
+    # GTIN/EAN; único por organização quando informado (índice único parcial no banco).
+    barcode = fields.CharField(max_length=14, null=True)
+    sale_price = fields.DecimalField(max_digits=15, decimal_places=2, default=0)
+    currency = fields.CharField(max_length=3, default="BRL")
+    min_stock = fields.DecimalField(max_digits=15, decimal_places=4, default=0)
+    tracks_stock = fields.BooleanField(default=True)
+    # Referência fiscal informada pelo usuário; não é validada contra a tabela oficial.
+    ncm = fields.CharField(max_length=8, null=True)
+    is_active = fields.BooleanField(default=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        unique_together = (("organization", "sku"),)

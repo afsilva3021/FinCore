@@ -8,6 +8,7 @@ executada para que a apresentação possa paginá-la.
 from collections.abc import Iterable
 from uuid import UUID
 
+from tortoise.expressions import Q
 from tortoise.queryset import QuerySet
 
 from fincore.infrastructure.models import (
@@ -20,9 +21,13 @@ from fincore.infrastructure.models import (
     JournalEntryLine,
     Membership,
     Organization,
+    Product,
+    ProductGroup,
     ReconciliationMatch,
     TitleSettlement,
+    UnitOfMeasure,
     User,
+    Warehouse,
 )
 
 # --- Identidade -----------------------------------------------------------------------
@@ -244,3 +249,62 @@ def titles_api_query(
 
 async def title_settlements(title: FinancialTitle) -> list[TitleSettlement]:
     return await TitleSettlement.filter(title=title).order_by("paid_on", "created_at")
+
+
+# --- Cadastros de produto -------------------------------------------------------------
+
+
+def products_query(
+    organization: Organization,
+    *,
+    search: str = "",
+    status: str = "all",
+    group_id: UUID | None = None,
+) -> QuerySet[Product]:
+    """Produtos da organização por código, descrição ou código de barras."""
+    query = Product.filter(organization=organization)
+    term = search.strip()
+    if term:
+        query = query.filter(
+            Q(sku__icontains=term) | Q(name__icontains=term) | Q(barcode__icontains=term)
+        )
+    if status == "active":
+        query = query.filter(is_active=True)
+    elif status == "inactive":
+        query = query.filter(is_active=False)
+    if group_id is not None:
+        query = query.filter(group_id=group_id)
+    return query.select_related("unit", "group").order_by("name", "sku")
+
+
+async def get_product(organization: Organization, product_id: UUID) -> Product | None:
+    return (
+        await Product.filter(id=product_id, organization=organization)
+        .select_related("unit", "group")
+        .first()
+    )
+
+
+async def product_groups(
+    organization: Organization, *, only_active: bool = False
+) -> list[ProductGroup]:
+    query = ProductGroup.filter(organization=organization)
+    if only_active:
+        query = query.filter(is_active=True)
+    return await query.select_related("parent").order_by("name")
+
+
+async def units_of_measure(
+    organization: Organization, *, only_active: bool = False
+) -> list[UnitOfMeasure]:
+    query = UnitOfMeasure.filter(organization=organization)
+    if only_active:
+        query = query.filter(is_active=True)
+    return await query.order_by("code")
+
+
+async def warehouses(organization: Organization, *, only_active: bool = False) -> list[Warehouse]:
+    query = Warehouse.filter(organization=organization)
+    if only_active:
+        query = query.filter(is_active=True)
+    return await query.order_by("-is_default", "name")

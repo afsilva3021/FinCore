@@ -1,6 +1,6 @@
 # FinCore
 
-FinCore é uma aplicação web financeira e contábil completa em português (pt-BR). A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
+FinCore é um ERP para comércio em construção, em português (pt-BR): o núcleo financeiro e contábil está completo e os módulos de produtos, estoque, compras, vendas, CRM e fiscal simulado entram por fases ([roteiro](docs/erp-roadmap.md)). Hoje, além do financeiro, existem os cadastros de produto. A interface usa páginas HTML renderizadas no servidor, Bootstrap, CSS e JavaScript. O backend atual é Python + Robyn + Tortoise ORM e PostgreSQL. A API JSON versionada complementa as páginas; não substitui a interface.
 
 Este README serve como visão de produto e guia reproduzível para desenvolvedores e agentes de código. Leia também [AGENTS.md](AGENTS.md), que define invariantes e o fluxo obrigatório de implementação, e `docs/`, que contém contratos e decisões detalhados.
 
@@ -14,6 +14,7 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 - **Multiempresa e perfis:** isolamento por organização testado em todas as rotas com ID; perfis Proprietário, Financeiro e Somente leitura.
 - **Segurança:** Argon2id, limite de tentativas de login, logout que revoga a sessão, CSRF, CSP sem scripts inline e banco acessível só por um usuário sem permissão de DDL.
 - **Sugestão de categoria por aprendizado:** um classificador Naive Bayes aprende com os lançamentos da própria organização e sugere a categoria pela descrição, sem serviço externo.
+- **Cadastros de produto:** produtos com SKU, código de barras validado (GTIN), grupos hierárquicos, unidades de medida com casas decimais próprias e depósitos, com um perfil de acesso só para essa área.
 - **Arquitetura verificada:** regras financeiras puras em `domain/` e testes que falham se a apresentação consultar o banco direto.
 
 <details>
@@ -27,6 +28,8 @@ Este README serve como visão de produto e guia reproduzível para desenvolvedor
 | Plano de contas e diário contábil | Membros e perfis de acesso |
 | ![Tema escuro](docs/screenshots/07-dashboard-tema-escuro.png) | ![Celular, perfil somente leitura](docs/screenshots/08-celular-somente-leitura.png) |
 | Tema escuro | Celular, perfil somente leitura |
+| ![Cadastro de produtos](docs/screenshots/09-produtos.png) | |
+| Cadastro de produtos (ERP, fase 8) | |
 
 As telas usam a organização fictícia criada por `fincore-seed-demo`.
 </details>
@@ -41,7 +44,8 @@ O Robyn é um framework web Python com servidor em Rust, assíncrono e com pouca
 - PostgreSQL de desenvolvimento: `127.0.0.1:5433`, banco `fincore`.
 - PostgreSQL de teste: `127.0.0.1:5434`, banco `fincore_test`.
 - Verificação: `GET /health` responde `{"status":"ok","database":"connected"}` quando o banco está acessível.
-- Migrations versionadas até `0018`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- Migrations versionadas até `0019`; migrations são aditivas e preservam registros. Depois de atualizar o repositório, rode `migrate` antes de subir a aplicação (veja [Migrations](#migrations-e-preservação-dos-dados)).
+- Transformação em ERP em andamento: fase 8 (cadastros de produto) concluída; estoque, compras, vendas, CRM e fiscal simulado ainda **não** existem. Situação por fase em [docs/erp-roadmap.md](docs/erp-roadmap.md).
 - Não há dados de demonstração na visão geral. Os dados exibidos vêm da organização autenticada.
 - Pix, boletos, cartões, webhooks e Open Finance são somente simuladores locais. Não enviam pagamentos nem acessam provedores.
 - A integração CNAB não possui parser ativo. Existe apenas um contrato para conectar adapters de banco, padrão e versão de layout explicitamente escolhidos.
@@ -53,6 +57,7 @@ Registro resumido do que mudou; o detalhe validado fica em [docs/progress.md](do
 
 | Data | Mudança |
 |---|---|
+| 2026-11-17 | Início da transformação em ERP ([roteiro](docs/erp-roadmap.md)). Fase 8: cadastros de produto — produtos, grupos, unidades de medida e depósitos em `/products` e `/product-settings`, API `/api/v1/products`, perfil **Estoque** e permissão de escrita por área. Migration `0019`. Correção: marcadores de conflito de merge removidos de `docs/progress.md`. |
 | 2026-11-06 | Sugestão de categoria por aprendizado com o histórico (Naive Bayes, sem serviço externo), comando `fincore-seed-demo`, screenshots no README e ações de escrita escondidas para o perfil somente leitura. Correção: o painel "Saldos por conta" da visão geral sempre dizia "Nenhuma conta cadastrada" (a rota não enviava os saldos ao template); o perfil exibia "Administrador" fixo. |
 | 2026-11-06 | API JSON de títulos (`/api/v1/titles`: listar, detalhar, cadastrar com parcelas, baixar, cancelar) com idempotência por `operation_key` e especificação OpenAPI em `docs/openapi.yaml`. Correção: reenvio de baixa com chave de outra organização agora é conflito `409` em vez de devolver a baixa alheia. Migration `0018`. |
 | 2026-11-06 | Arquitetura: `web.py` (2.600 linhas) dividido em `presentation/routes/` por área; decorators `login_required`/`api_login_required` no lugar de 43 blocos repetidos; todas as consultas das rotas movidas para `application/queries.py` (inclusive o N+1 restante da conciliação); testes de arquitetura. |
@@ -112,10 +117,11 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
   | Perfil | Pode |
   |---|---|
   | Proprietário | Tudo, inclusive adicionar membros, mudar perfis e desativar acessos |
-  | Financeiro | Cadastrar e alterar dados financeiros e contábeis; não gerencia membros |
+  | Financeiro | Cadastrar e alterar dados financeiros e contábeis; só consulta produtos; não gerencia membros |
+  | Estoque | Cadastrar e alterar produtos, grupos, unidades e depósitos; só consulta o financeiro |
   | Somente leitura | Consultar telas e relatórios; nenhuma alteração |
 
-  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
+  A permissão de escrita é verificada num middleware antes de todas as rotas (`POST`/`PUT`/`PATCH`/`DELETE`), então uma rota nova já nasce protegida; o bloqueio responde `403` em HTML ou JSON. Cada rota pertence a uma área de escrita (cadastros de produto ou financeiro) e cada perfil altera só as suas áreas; uma rota ainda não classificada conta como financeira. A organização sempre mantém pelo menos um proprietário ativo. Membros desativados não entram, mas o histórico é preservado.
 - Cadastro próprio de clientes e fornecedores em `/customers` e `/suppliers`, com CPF/CNPJ, endereço, contato, inativação e reativação.
 - Consulta de endereço por CEP via ViaCEP, acionada pelo formulário de contato; os campos também podem ser preenchidos manualmente.
 
@@ -160,10 +166,17 @@ Por que não Clean Architecture completa: com um ORM Active Record, separar enti
 - Totais de receitas e despesas (visão geral e relatórios) consideram só movimentos liquidados e abatem estornos da natureza do movimento original; o estorno entra no período da sua própria data. Transferências não entram nesses totais.
 - Limites OFX: não processa OFX 2.x XML, múltiplas contas no mesmo arquivo, conversão de moeda ou upload multipart.
 
+### Cadastros de produto (ERP, fase 8)
+
+- Produtos em `/products`: código (SKU) único por organização, descrição, grupo, unidade de medida, preço de venda, estoque mínimo, código de barras e NCM; busca por código, descrição ou código de barras, filtros por situação e grupo, edição e inativação.
+- Código de barras é validado como GTIN-8/12/13/14 pelo dígito verificador e é único por organização quando informado. O NCM guarda só o formato de 8 dígitos; não é conferido na tabela oficial.
+- Grupos, unidades e depósitos em `/product-settings`. Grupos são hierárquicos e não aceitam ciclos. Cada unidade define quantas casas decimais a quantidade aceita (0 para peças, 3 para quilos), e quantidades fora dessa precisão são recusadas em vez de arredondadas.
+- Toda organização tem exatamente um depósito padrão, garantido também por índice no banco. Organizações novas e as que já existiam recebem o depósito `PRINCIPAL` e as unidades UN, CX, KG, L e M.
+- **Ainda não há estoque:** o cadastro não guarda saldo nem custo. Movimentações, saldo e custo médio chegam na fase 9.
+
 ### API e demonstrações
 
-- API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias e transações (listar, consultar, criar, liquidar e estornar), com paginação e isolamento por organização.
-- Títulos são operados pelas páginas HTML `/payables` e `/receivables`; ainda não há API JSON de títulos.
+- API JSON `/api/v1`: saúde, sessão/CSRF, contas, categorias, transações (listar, consultar, criar, liquidar e estornar), títulos (listar, detalhar, cadastrar, baixar e cancelar) e produtos (listar, detalhar e cadastrar), com paginação e isolamento por organização.
 - `/integrations` permite executar simuladores locais de Pix, boleto, cartão, webhook e Open Finance.
 - Contratos e rotas: [docs/api.md](docs/api.md). Limites de integrações: [docs/external-integrations.md](docs/external-integrations.md).
 
@@ -184,6 +197,9 @@ Os modelos Tortoise estão em `src/fincore/infrastructure/models.py`; migrations
 | `JournalEntry`, `JournalEntryLine` | Cabeçalho e linhas de débito/crédito; efetivação e estorno rastreáveis |
 | `ImportedStatementTransaction` | Linha importada de OFX e identidade externa por conta/FITID |
 | `ReconciliationMatch`, `ReconciliationEvent` | Vínculo com transação interna e trilha de conciliar/desconciliar |
+| `ProductGroup`, `UnitOfMeasure` | Grupo hierárquico de produtos; unidade de medida com sigla e casas decimais das quantidades |
+| `Product` | Produto da organização: SKU e código de barras únicos, grupo, unidade, preço de venda, estoque mínimo e NCM de referência; não guarda saldo |
+| `Warehouse` | Depósito de estoque; exatamente um padrão por organização |
 
 As regras contábeis, estados e invariantes estão detalhados em [docs/accounting.md](docs/accounting.md), [docs/requirements.md](docs/requirements.md) e [AGENTS.md](AGENTS.md). Não criar um campo de saldo editável como fonte da verdade; derive valores realizados dos movimentos/diário. Datas de competência, vencimento e liquidação representam conceitos diferentes.
 
@@ -377,6 +393,7 @@ tests/integration/                persistência PostgreSQL e fluxos HTTP
 - `docs/requirements.md`: histórias de usuário e critérios de aceite.
 - `docs/progress.md`: estado validado, pendências e próximo passo.
 - `docs/decisions.md`: decisões técnicas e limitações conhecidas.
+- `docs/erp-roadmap.md`: fases da transformação em ERP, decisões aprovadas e modelo de dados previsto.
 - `docs/api.md`: rotas HTML e contrato JSON.
 - `docs/accounting.md`: regras de partidas dobradas.
 - `docs/external-integrations.md`: como planejar integrações futuras.

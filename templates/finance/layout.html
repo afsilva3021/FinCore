@@ -16,6 +16,11 @@
         <a class="nav-link {% if active == 'customers' %}active{% endif %}" href="/customers"><span>♙</span> Clientes</a>
         <a class="nav-link {% if active == 'suppliers' %}active{% endif %}" href="/suppliers"><span>▣</span> Fornecedores</a>
       </div>
+      <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-products"><span>PRODUTOS</span><i aria-hidden="true">⌄</i></button>
+      <div class="nav-group" id="nav-products" hidden>
+        <a class="nav-link {% if active == 'products' %}active{% endif %}" href="/products"><span>▩</span> Produtos</a>
+        <a class="nav-link {% if active == 'product-settings' %}active{% endif %}" href="/product-settings"><span>☰</span> Grupos e depósitos</a>
+      </div>
       <button class="nav-group-toggle" type="button" data-nav-accordion aria-expanded="false" aria-controls="nav-management"><span>GESTÃO</span><i aria-hidden="true">⌄</i></button>
       <div class="nav-group" id="nav-management" hidden>
         <a class="nav-link {% if active == 'accounting' %}active{% endif %}" href="/accounting"><span>▧</span> Contabilidade</a>
@@ -30,9 +35,9 @@
   <main class="main-content">
     <header class="topbar"><button class="menu-toggle" type="button" data-sidebar-toggle aria-label="Abrir menu">☰</button><div class="breadcrumb-line"><a href="/dashboard">Início</a><span class="crumb-separator">/</span><strong>{{ section }}</strong></div><div class="topbar-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Ativar tema escuro" title="Ativar tema escuro"><span data-theme-icon aria-hidden="true">☾</span></button><span class="demo-pill" title="{{ name }}"><i></i> {{ name }}</span><span class="topbar-avatar">{{ name[:1]|upper }}</span></div></header>
     <div class="page-container">
-      {% if current_role() and not can_write() %}<div class="alert alert-info readonly-banner" role="status">Perfil somente leitura: você pode consultar, mas não alterar dados.</div>{% endif %}
+      {% if current_role() and not can_write() %}<div class="alert alert-info readonly-banner" role="status">{% if current_role() == 'viewer' %}Perfil somente leitura: você pode consultar, mas não alterar dados.{% else %}O perfil {{ role_label(current_role()) }} só consulta esta área: você pode ver os dados, mas não alterá-los.{% endif %}</div>{% endif %}
       {% block module_content %}{% endblock %}
-      <footer class="page-footer"><span>FinCore <span class="footer-dot">·</span> Gestão financeira</span><span>Dados privados da organização.</span></footer>
+      <footer class="page-footer"><span>FinCore <span class="footer-dot">·</span> Gestão empresarial</span><span>Dados privados da organização.</span></footer>
     </div>
   </main>
 </div>

@@ -1,0 +1,52 @@
+{% extends "finance/layout.html" %}
+{% block title %}Produtos · FinCore{% endblock %}
+{% block module_content %}
+<div class="page-heading transactions-page-heading">
+  <div><span class="eyebrow">PRODUTOS · CADASTRO</span><h1>Produtos</h1><p>Cadastre as mercadorias uma vez para usar em estoque, compras e vendas.</p></div>
+  <div class="transactions-header-actions"><button class="btn btn-primary" type="button" data-drawer-open aria-haspopup="dialog" aria-controls="product-drawer" aria-expanded="false">＋ Novo produto</button></div>
+</div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<article class="panel-card transactions-table-card">
+  <div class="panel-heading"><div><h3>Produtos cadastrados</h3><p>O saldo em estoque passa a aparecer aqui quando o módulo de estoque for ativado.</p></div><span class="step-count">{{ products|length }} nesta página</span></div>
+  <form method="get" action="/products" class="title-filters mb-3">
+    <div class="title-search-field"><label class="form-label" for="product-search">Buscar</label><input class="form-control" id="product-search" name="q" maxlength="80" value="{{ search }}" placeholder="Código, descrição ou código de barras"></div>
+    <div><label class="form-label" for="product-status">Situação</label><select class="form-select" id="product-status" name="status"><option value="all" {% if status == 'all' %}selected{% endif %}>Todas</option><option value="active" {% if status == 'active' %}selected{% endif %}>Ativos</option><option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inativos</option></select></div>
+    <div><label class="form-label" for="product-group-filter">Grupo</label><select class="form-select" id="product-group-filter" name="group"><option value="">Todos</option>{% for group in groups %}<option value="{{ group.id }}" {% if group_filter == group.id|string %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></div>
+    <div class="title-filter-actions"><button class="btn btn-primary" type="submit">Filtrar</button><a class="btn btn-outline-secondary" href="/products">Limpar</a></div>
+  </form>
+  {% if products %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Produto</th><th>Grupo</th><th>Unidade</th><th class="text-end">Preço de venda</th><th class="text-end">Estoque mínimo</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for product in products %}
+    <tr><td><strong>{{ product.name }}</strong><small class="d-block text-secondary">{{ product.sku }}{% if product.barcode %} · EAN {{ product.barcode }}{% endif %}</small></td>
+      <td>{{ product.group.name if product.group else '—' }}</td>
+      <td>{{ product.unit.code }}</td>
+      <td class="text-end">R$ {{ product.sale_price|brl }}</td>
+      <td class="text-end">{% if product.tracks_stock %}{{ product.min_stock|quantity }}{% else %}<span class="text-secondary">Não controla</span>{% endif %}</td>
+      <td><span class="badge {{ 'text-bg-success' if product.is_active else 'text-bg-secondary' }}">{{ 'Ativo' if product.is_active else 'Inativo' }}</span></td>
+      <td><div class="d-flex gap-2"><a class="btn btn-sm btn-outline-primary" href="/products/{{ product.id }}/edit">Editar</a><form method="post" action="/products/{{ product.id }}/active"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="filter_q" value="{{ search }}"><input type="hidden" name="filter_status" value="{{ status }}"><input type="hidden" name="filter_group" value="{{ group_filter }}"><input type="hidden" name="is_active" value="{{ 'false' if product.is_active else 'true' }}"><button class="btn btn-sm {{ 'btn-outline-secondary' if product.is_active else 'btn-outline-success' }}" type="submit">{{ 'Inativar' if product.is_active else 'Reativar' }}</button></form></div></td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+{% include "partials/pagination.html" %}
+  {% else %}<div class="finance-empty"><span>▩</span><strong>Nenhum produto encontrado</strong><small>{% if search or status != 'all' or group_filter %}Nenhum produto corresponde aos filtros.{% else %}Cadastre o primeiro produto para começar.{% endif %}</small></div>{% endif %}
+</article>
+
+<div class="movement-drawer-backdrop" data-drawer-backdrop hidden></div>
+<aside class="movement-drawer" id="product-drawer" data-movement-drawer role="dialog" aria-modal="true" aria-labelledby="product-drawer-title" {% if open_drawer %}data-drawer-initially-open{% else %}hidden{% endif %}>
+  <div class="movement-drawer-header"><div><span class="eyebrow">PRODUTOS</span><h2 id="product-drawer-title">{{ 'Editar produto' if editing else 'Novo produto' }}</h2><p>Código e descrição identificam o produto em todo o sistema.</p></div><button class="drawer-close" type="button" data-drawer-close aria-label="Fechar painel">×</button></div>
+  <form method="post" action="{{ '/products/' ~ form.get('id') ~ '/update' if editing else '/products' }}" class="movement-drawer-form" data-movement-form>
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="filter_q" value="{{ search }}"><input type="hidden" name="filter_status" value="{{ status }}"><input type="hidden" name="filter_group" value="{{ group_filter }}">
+    <div class="drawer-form-fields">
+      <div class="drawer-date-grid"><div><label class="form-label" for="product-sku">Código (SKU)</label><input class="form-control" id="product-sku" name="sku" maxlength="40" value="{{ form.get('sku','') }}" required autocapitalize="characters"></div><div><label class="form-label" for="product-unit">Unidade</label><select class="form-select" id="product-unit" name="unit_id" required>{% for unit in units %}<option value="{{ unit.id }}" {% if form.get('unit_id') == unit.id|string %}selected{% endif %}>{{ unit.code }} — {{ unit.name }}</option>{% endfor %}</select></div></div>
+      <div><label class="form-label" for="product-name">Descrição</label><input class="form-control" id="product-name" name="name" maxlength="160" value="{{ form.get('name','') }}" required></div>
+      <div><label class="form-label" for="product-group">Grupo <small class="text-secondary fw-normal">(opcional)</small></label><select class="form-select" id="product-group" name="group_id"><option value="">Sem grupo</option>{% for group in groups %}<option value="{{ group.id }}" {% if form.get('group_id') == group.id|string %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="product-price">Preço de venda (R$)</label><input class="form-control" id="product-price" name="sale_price" inputmode="decimal" maxlength="20" value="{{ form.get('sale_price','') }}" placeholder="0,00"></div><div><label class="form-label" for="product-min-stock">Estoque mínimo</label><input class="form-control" id="product-min-stock" name="min_stock" inputmode="decimal" maxlength="20" value="{{ form.get('min_stock','') }}" placeholder="0"></div></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" id="product-tracks-stock" name="tracks_stock" value="true" {% if form.get('tracks_stock') == 'true' %}checked{% endif %}><label class="form-check-label" for="product-tracks-stock">Controlar estoque deste produto</label></div>
+      <div class="drawer-date-grid"><div><label class="form-label" for="product-barcode">Código de barras <small class="text-secondary fw-normal">(EAN/GTIN)</small></label><input class="form-control" id="product-barcode" name="barcode" inputmode="numeric" maxlength="20" value="{{ form.get('barcode','') }}"></div><div><label class="form-label" for="product-ncm">NCM</label><input class="form-control" id="product-ncm" name="ncm" inputmode="numeric" maxlength="10" value="{{ form.get('ncm','') }}" placeholder="0000.00.00"></div></div>
+      <div><label class="form-label" for="product-description">Detalhes <small class="text-secondary fw-normal">(opcional)</small></label><textarea class="form-control" id="product-description" name="description" rows="3" maxlength="2000">{{ form.get('description','') }}</textarea></div>
+    </div>
+    <div class="movement-drawer-footer"><span>O NCM é só uma referência informada por você; não é conferido na tabela oficial.</span><div class="movement-drawer-actions"><button class="btn btn-outline-secondary" type="button" data-drawer-close>Cancelar</button><button class="btn btn-primary" type="submit">{{ 'Salvar alterações' if editing else 'Adicionar produto' }}</button></div></div>
+  </form>
+</aside>
+{% endblock %}

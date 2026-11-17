@@ -11,18 +11,28 @@ from fincore.infrastructure.models import Membership, Organization, User
 ROLE_LABELS = {
     "owner": "Proprietário",
     "finance": "Financeiro",
+    "stock": "Estoque",
     "viewer": "Somente leitura",
 }
 ROLE_DESCRIPTIONS = {
     "owner": "Tudo, inclusive gerenciar membros e perfis.",
     "finance": "Cadastra e altera dados financeiros e contábeis; não gerencia membros.",
+    "stock": "Cadastra e altera produtos, grupos, unidades e depósitos; consulta o restante.",
     "viewer": "Consulta telas e relatórios; não altera nada.",
 }
-WRITE_ROLES = frozenset({"owner", "finance"})
+# Áreas de escrita. Cada perfil altera só as áreas listadas; a leitura é comum a todos.
+AREA_FINANCE = "finance"
+AREA_CATALOG = "catalog"
+ROLE_WRITE_AREAS: dict[str, frozenset[str]] = {
+    "owner": frozenset({AREA_FINANCE, AREA_CATALOG}),
+    "finance": frozenset({AREA_FINANCE}),
+    "stock": frozenset({AREA_CATALOG}),
+    "viewer": frozenset(),
+}
 
 
-def can_write(role: str) -> bool:
-    return role in WRITE_ROLES
+def can_write(role: str, area: str = AREA_FINANCE) -> bool:
+    return area in ROLE_WRITE_AREAS.get(role, frozenset())
 
 
 def can_manage_members(role: str) -> bool:

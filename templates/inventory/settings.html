@@ -1,0 +1,71 @@
+{% extends "finance/layout.html" %}
+{% block title %}Grupos, unidades e depósitos · FinCore{% endblock %}
+{% macro active_form(path, item) %}<form method="post" action="{{ path }}/{{ item.id }}/active"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="is_active" value="{{ 'false' if item.is_active else 'true' }}"><button class="btn btn-sm {{ 'btn-outline-secondary' if item.is_active else 'btn-outline-success' }}" type="submit">{{ 'Inativar' if item.is_active else 'Reativar' }}</button></form>{% endmacro %}
+{% macro status_badge(item) %}<span class="badge {{ 'text-bg-success' if item.is_active else 'text-bg-secondary' }}">{{ 'Ativo' if item.is_active else 'Inativo' }}</span>{% endmacro %}
+{% block module_content %}
+<div class="page-heading"><div><span class="eyebrow">PRODUTOS · CADASTROS AUXILIARES</span><h1>Grupos, unidades e depósitos</h1><p>Organize os produtos em grupos, defina as unidades de medida e os locais de estoque.</p></div></div>
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+
+<article class="panel-card transactions-table-card mb-3" id="groups">
+  <div class="panel-heading"><div><h3>Grupos de produto</h3><p>Um grupo pode ficar dentro de outro, como Bebidas › Refrigerantes.</p></div><span class="step-count">{{ groups|length }} grupo(s)</span></div>
+  <form method="post" action="/product-settings/groups" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-md-5"><label class="form-label" for="group-name">Nome do grupo</label><input class="form-control" id="group-name" name="name" maxlength="120" required value="{{ form.get('name','') if failed == 'group' else '' }}"></div>
+    <div class="col-md-4"><label class="form-label" for="group-parent">Grupo superior</label><select class="form-select" id="group-parent" name="parent_id"><option value="">Nenhum</option>{% for group in groups if group.is_active %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Adicionar grupo</button></div>
+  </form>
+  {% if groups %}<div class="table-responsive"><table class="table align-middle"><thead><tr><th>Grupo</th><th>Grupo superior</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for group in groups %}
+    <tr><td><strong>{{ group.name }}</strong></td><td>{{ group.parent.name if group.parent else '—' }}</td><td>{{ status_badge(group) }}</td>
+      <td><div class="d-flex gap-2"><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#edit-group-{{ group.id }}" aria-expanded="false" aria-controls="edit-group-{{ group.id }}">Editar</button>{{ active_form('/product-settings/groups', group) }}</div></td></tr>
+    <tr class="collapse" id="edit-group-{{ group.id }}"><td colspan="4"><form method="post" action="/product-settings/groups/{{ group.id }}/update" class="row g-2 align-items-end"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="col-md-5"><label class="form-label" for="group-name-{{ group.id }}">Nome</label><input class="form-control" id="group-name-{{ group.id }}" name="name" maxlength="120" required value="{{ group.name }}"></div>
+      <div class="col-md-4"><label class="form-label" for="group-parent-{{ group.id }}">Grupo superior</label><select class="form-select" id="group-parent-{{ group.id }}" name="parent_id"><option value="">Nenhum</option>{% for other in groups if other.is_active and other.id != group.id %}<option value="{{ other.id }}" {% if group.parent_id == other.id %}selected{% endif %}>{{ other.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><button class="btn btn-outline-primary w-100" type="submit">Salvar</button></div></form></td></tr>
+    {% endfor %}
+  </tbody></table></div>{% else %}<div class="finance-empty"><span>◈</span><strong>Nenhum grupo cadastrado</strong><small>Grupos são opcionais e ajudam a filtrar produtos.</small></div>{% endif %}
+</article>
+
+<article class="panel-card transactions-table-card mb-3" id="units">
+  <div class="panel-heading"><div><h3>Unidades de medida</h3><p>As casas decimais definem se a quantidade aceita frações: 0 para peças, 3 para quilos.</p></div><span class="step-count">{{ units|length }} unidade(s)</span></div>
+  <form method="post" action="/product-settings/units" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-md-2"><label class="form-label" for="unit-code">Sigla</label><input class="form-control" id="unit-code" name="code" maxlength="6" required value="{{ form.get('code','') if failed == 'unit' else '' }}" placeholder="PCT"></div>
+    <div class="col-md-4"><label class="form-label" for="unit-name">Nome</label><input class="form-control" id="unit-name" name="name" maxlength="60" required value="{{ form.get('name','') if failed == 'unit' else '' }}" placeholder="Pacote"></div>
+    <div class="col-md-3"><label class="form-label" for="unit-decimals">Casas decimais</label><select class="form-select" id="unit-decimals" name="decimal_places">{% for places in range(5) %}<option value="{{ places }}">{{ places }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Adicionar unidade</button></div>
+  </form>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Sigla</th><th>Nome</th><th>Casas decimais</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for unit in units %}
+    <tr><td><strong>{{ unit.code }}</strong></td><td>{{ unit.name }}</td><td>{{ unit.decimal_places }}</td><td>{{ status_badge(unit) }}</td>
+      <td><div class="d-flex gap-2"><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#edit-unit-{{ unit.id }}" aria-expanded="false" aria-controls="edit-unit-{{ unit.id }}">Editar</button>{{ active_form('/product-settings/units', unit) }}</div></td></tr>
+    <tr class="collapse" id="edit-unit-{{ unit.id }}"><td colspan="5"><form method="post" action="/product-settings/units/{{ unit.id }}/update" class="row g-2 align-items-end"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="col-md-2"><label class="form-label" for="unit-code-{{ unit.id }}">Sigla</label><input class="form-control" id="unit-code-{{ unit.id }}" name="code" maxlength="6" required value="{{ unit.code }}"></div>
+      <div class="col-md-4"><label class="form-label" for="unit-name-{{ unit.id }}">Nome</label><input class="form-control" id="unit-name-{{ unit.id }}" name="name" maxlength="60" required value="{{ unit.name }}"></div>
+      <div class="col-md-3"><label class="form-label" for="unit-decimals-{{ unit.id }}">Casas decimais</label><select class="form-select" id="unit-decimals-{{ unit.id }}" name="decimal_places">{% for places in range(5) %}<option value="{{ places }}" {% if unit.decimal_places == places %}selected{% endif %}>{{ places }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><button class="btn btn-outline-primary w-100" type="submit">Salvar</button></div></form></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+</article>
+
+<article class="panel-card transactions-table-card" id="warehouses">
+  <div class="panel-heading"><div><h3>Depósitos</h3><p>Locais onde o estoque fica. O depósito padrão é sugerido nas movimentações.</p></div><span class="step-count">{{ warehouses|length }} depósito(s)</span></div>
+  <form method="post" action="/product-settings/warehouses" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="col-md-3"><label class="form-label" for="warehouse-code">Código</label><input class="form-control" id="warehouse-code" name="code" maxlength="20" required value="{{ form.get('code','') if failed == 'warehouse' else '' }}" placeholder="LOJA-01"></div>
+    <div class="col-md-6"><label class="form-label" for="warehouse-name">Nome</label><input class="form-control" id="warehouse-name" name="name" maxlength="120" required value="{{ form.get('name','') if failed == 'warehouse' else '' }}" placeholder="Loja do centro"></div>
+    <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Adicionar depósito</button></div>
+  </form>
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Código</th><th>Nome</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+    {% for warehouse in warehouses %}
+    <tr><td><strong>{{ warehouse.code }}</strong></td><td>{{ warehouse.name }}{% if warehouse.is_default %} <span class="badge text-bg-primary">Padrão</span>{% endif %}</td><td>{{ status_badge(warehouse) }}</td>
+      <td><div class="d-flex gap-2 flex-wrap"><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#edit-warehouse-{{ warehouse.id }}" aria-expanded="false" aria-controls="edit-warehouse-{{ warehouse.id }}">Editar</button>{% if not warehouse.is_default %}{% if warehouse.is_active %}<form method="post" action="/product-settings/warehouses/{{ warehouse.id }}/default"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-primary" type="submit">Tornar padrão</button></form>{% endif %}{{ active_form('/product-settings/warehouses', warehouse) }}{% endif %}</div></td></tr>
+    <tr class="collapse" id="edit-warehouse-{{ warehouse.id }}"><td colspan="4"><form method="post" action="/product-settings/warehouses/{{ warehouse.id }}/update" class="row g-2 align-items-end"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="col-md-3"><label class="form-label" for="warehouse-code-{{ warehouse.id }}">Código</label><input class="form-control" id="warehouse-code-{{ warehouse.id }}" name="code" maxlength="20" required value="{{ warehouse.code }}"></div>
+      <div class="col-md-6"><label class="form-label" for="warehouse-name-{{ warehouse.id }}">Nome</label><input class="form-control" id="warehouse-name-{{ warehouse.id }}" name="name" maxlength="120" required value="{{ warehouse.name }}"></div>
+      <div class="col-md-3"><button class="btn btn-outline-primary w-100" type="submit">Salvar</button></div></form></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+</article>
+{% endblock %}

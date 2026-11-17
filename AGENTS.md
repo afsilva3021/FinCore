@@ -4,7 +4,9 @@
 
 ## 1. Missão e escopo
 
-Construir o **FinCore**, uma aplicação web de gestão financeira e contábil, com interface em português (pt-BR), arquitetura modular, rastreabilidade e testes automatizados. O objetivo é obter um **sistema funcional, executável localmente e verificável**, implementado por incrementos completos — não apenas telas, stubs ou uma estrutura vazia.
+Construir o **FinCore**, um ERP para comércio (venda de produtos) que nasceu como aplicação de gestão financeira e contábil, com interface em português (pt-BR), arquitetura modular, rastreabilidade e testes automatizados. O objetivo é obter um **sistema funcional, executável localmente e verificável**, implementado por incrementos completos — não apenas telas, stubs ou uma estrutura vazia.
+
+O núcleo financeiro e contábil (fases 1 a 7) está implementado. A transformação em ERP segue as fases 8 a 13 de `docs/erp-roadmap.md`, que registra as decisões aprovadas e o modelo de dados previsto; leia-o antes de mexer em produtos, estoque, compras, vendas, CRM ou fiscal.
 
 Leia o `README.md` e os arquivos em `docs/` antes de trabalhar. O README atual lista funcionalidades desejadas; **não presuma que elas já estão implementadas**. Se requisitos estiverem incompletos, documente premissas em `docs/decisions.md`, faça a escolha reversível mais segura e prossiga. Não invente obrigações regulatórias, contratos de APIs bancárias, credenciais ou layouts CNAB de bancos específicos.
 
@@ -117,12 +119,28 @@ Consulte `README.md`, `docs/progress.md`, `docs/api.md` e os testes antes de dec
 - Importação OFX 1.x SGML e conciliação manual com deduplicação e auditoria. CNAB tem somente protocolo de adapter sem layout bancário implementado.
 - Exportação de relatório CSV/PDF e simuladores locais sem integrações externas reais.
 - API JSON `/api/v1` para sessão, contas, categorias, transações e títulos (listar, detalhar, cadastrar com parcelas, baixar e cancelar, com idempotência por `operation_key`). Contrato em `docs/api.md` e `docs/openapi.yaml`.
+- Cadastros de produto (fase 8): produtos, grupos, unidades de medida e depósitos, com páginas `/products` e `/product-settings` e API `/api/v1/products`. **Estoque, compras, vendas, CRM e fiscal ainda não existem.**
+- Perfis `owner`, `finance`, `stock` e `viewer`, com permissão de escrita por área (`ROLE_WRITE_AREAS` em `application/members.py` e `write_area` em `presentation/web.py`). Toda rota nova de um módulo do ERP precisa ser classificada em `write_area`; sem isso ela fica na área financeira.
 
-Entidades Tortoise existentes: `Organization`, `User`, `Membership`, `FinancialAccount`, `Category`, `FinancialTransaction`, `Counterparty`, `FinancialTitle`, `TitleSettlement`, `LedgerAccount`, `JournalEntry`, `JournalEntryLine`, `ImportedStatementTransaction`, `ReconciliationMatch` e `ReconciliationEvent`. Seus vínculos e responsabilidades estão no README e `src/fincore/infrastructure/models.py`. Não duplicar entidades antes de inspecionar o modelo e migrations.
+Entidades Tortoise existentes: `Organization`, `User`, `Membership`, `FinancialAccount`, `Category`, `FinancialTransaction`, `Counterparty`, `FinancialTitle`, `TitleSettlement`, `LedgerAccount`, `JournalEntry`, `JournalEntryLine`, `ImportedStatementTransaction`, `ReconciliationMatch`, `ReconciliationEvent`, `ProductGroup`, `UnitOfMeasure`, `Product` e `Warehouse`. Seus vínculos e responsabilidades estão no README e `src/fincore/infrastructure/models.py`. Não duplicar entidades antes de inspecionar o modelo e migrations.
 
 Não recrie módulos funcionais já existentes nem mude seus contratos sem necessidade. Não assuma que todos os checkboxes do README indicam conclusão; confirme progress.md e testes. Recursos simulados, incompletos ou bloqueados precisam continuar explicitamente identificados.
 
-### 4.5 Referências técnicas do FinCore
+### 4.5 Produtos, estoque e documentos comerciais (ERP)
+
+Regras para as fases 8 a 13; detalhes e modelo de dados em `docs/erp-roadmap.md`.
+
+- Reaproveitar `Counterparty` (clientes e fornecedores), `FinancialTitle`/`TitleSettlement` (contas a pagar e a receber) e o diário contábil. Compras e vendas **geram títulos**; não criar cadastro paralelo de contatos nem outra lógica de parcelas e baixas.
+- SKU e código de barras são únicos por organização. Quantidades usam `Decimal` e `NUMERIC(15,4)` e respeitam as casas decimais da unidade de medida; nunca arredondar quantidade em silêncio.
+- Cada organização tem exatamente um depósito padrão.
+- Quantidade em estoque é derivada dos movimentos; nenhum campo de saldo editável é fonte da verdade. Um saldo guardado é só cache, gravado na mesma transação do movimento e coberto por teste que o compara aos movimentos.
+- Movimento de estoque efetivado é imutável; correção por movimento de estorno com referência ao original.
+- Estoque negativo é bloqueado, com bloqueio de linha contra saídas simultâneas. Custeio por custo médio ponderado móvel.
+- Documento que gera estoque, título e diário grava tudo em uma única transação PostgreSQL ou não grava nada, e aceita `operation_key`.
+- Títulos gerados por compra ou venda lançam por competência (estoque/fornecedores, clientes/receita, CMV/estoque); títulos avulsos continuam lançando só na liquidação. Documentar em `docs/accounting.md` ao implementar.
+- Fiscal é somente simulação: dados tributários informados pelo usuário, sem XML válido, assinatura ou transmissão à SEFAZ, e a interface diz isso.
+
+### 4.6 Referências técnicas do FinCore
 
 Utilizar os seguintes projetos como referência para compreender regras de negócio:
 
@@ -171,7 +189,7 @@ https://github.com/firefly-iii/firefly-iii
 - Interface responsiva em pt-BR, com acessibilidade básica, estados de carregamento e mensagens de erro claras.
 - Não expor funcionalidades como prontas na interface quando forem apenas simuladas; sinalizar claramente o ambiente de demonstração.
 - A interface atual é renderizada no servidor com Robyn/Jinja/Bootstrap. Formulários seguem sessão e CSRF; mensagens de confirmação usam modal da interface, não `alert()`/`confirm()` nativos do JavaScript.
-- Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports`, `/integrations` e `/members`. Verifique `docs/api.md` para métodos e limites completos.
+- Páginas atuais incluem: `/login`, `/register`, `/dashboard`, `/accounts`, `/categories`, `/transactions`, `/payables`, `/receivables`, `/accounting`, `/reconciliation`, `/reports`, `/integrations`, `/members`, `/products` e `/product-settings`. Verifique `docs/api.md` para métodos e limites completos.
 - Títulos têm páginas HTML (`/payables`, `/receivables`, `/titles/...`) e API JSON (`/api/v1/titles`). Mudanças na API de títulos atualizam `docs/openapi.yaml` e devem continuar passando no `openapi-spec-validator`.
 
 ## 6. Segurança mínima obrigatória
@@ -232,6 +250,12 @@ Concluir uma fase com testes e documentação antes de iniciar a próxima:
 5. **Conciliação:** importação OFX, extratos externos, matching, divergências e revisão manual; CNAB por layout especificado.
 6. **Apresentação:** dashboards, filtros, relatórios e exportação CSV/PDF com testes.
 7. **Integrações simuladas:** interfaces para Pix, boletos, cartões, webhooks e Open Finance com mocks, documentação e testes; produção fica fora de escopo sem requisitos próprios.
+8. **Cadastros de produto (concluída):** produtos, grupos, unidades de medida e depósitos.
+9. **Estoque:** movimentos imutáveis, saldo derivado, custo médio, ajustes e transferências entre depósitos.
+10. **Compras:** pedido de compra, recebimento, entrada em estoque e contas a pagar.
+11. **Vendas:** orçamento, pedido, faturamento, baixa de estoque e contas a receber.
+12. **CRM:** leads, funil de oportunidades e atividades ligados a vendas.
+13. **Fiscal (simulado):** documento fiscal interno com dados tributários informados, sem SEFAZ.
 
 Registrar em `docs/progress.md` o que foi implementado, validado, pendências e próximo passo. Atualizar os checkboxes do README apenas após implementação validada.
 

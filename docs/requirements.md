@@ -38,3 +38,21 @@ Autenticação, organizações, lançamentos, plano de contas, integrações ban
 - Páginas funcionam em telas móveis e desktop, com mensagens em pt-BR, estados vazios e navegação clara.
 - Funcionalidade simulada ou ainda não liberada deve ser identificada; não apresentar indicadores fictícios como dados reais.
 - Módulos planejados: gestão financeira, contabilidade, conciliação, dashboard e relatórios. Pix, boletos, cartões, webhooks e Open Finance permanecem em sandbox até haver provedor e requisitos definidos.
+
+## Fase 8 — Cadastros de produto (ERP)
+
+### Histórias de usuário
+
+- Como responsável pelo estoque, quero cadastrar produtos com código, descrição, unidade, grupo, preço de venda e estoque mínimo para usá-los em estoque, compras e vendas.
+- Como responsável pelo estoque, quero organizar os produtos em grupos e definir unidades de medida e depósitos da minha empresa.
+- Como proprietário, quero dar a alguém acesso para manter os cadastros de produto sem que essa pessoa altere o financeiro.
+
+### Critérios de aceite
+
+- SKU duplicado na mesma organização é recusado, inclusive em envios simultâneos; outra organização pode usar o mesmo SKU.
+- Código de barras com dígito verificador errado é recusado; quando informado, é único na organização.
+- Estoque mínimo fracionado só é aceito em unidade que permite casas decimais.
+- Grupo não pode ser subgrupo de si mesmo nem de um descendente.
+- A organização tem sempre exatamente um depósito padrão; o padrão não pode ser inativado.
+- Produto, grupo, unidade e depósito de uma organização não são lidos nem alterados por outra.
+- Perfil Estoque altera cadastros de produto e só consulta o financeiro; Financeiro, o inverso; Somente leitura não altera nada.

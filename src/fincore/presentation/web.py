@@ -29,6 +29,8 @@ from fincore.application.identity import (
     PASSWORD_RULES_TEXT,
 )
 from fincore.application.members import (
+    AREA_CATALOG,
+    AREA_FINANCE,
     ROLE_DESCRIPTIONS,
     ROLE_LABELS,
     can_manage_members,
@@ -80,12 +82,25 @@ template_env = Environment(
 _current_role: ContextVar[str] = ContextVar("fincore_current_role", default="")
 template_env.globals["current_role"] = lambda: _current_role.get()
 template_env.globals["role_label"] = role_label
-template_env.globals["can_write"] = lambda: can_write(_current_role.get())
+_current_area: ContextVar[str] = ContextVar("fincore_current_area", default=AREA_FINANCE)
+template_env.globals["can_write"] = lambda: can_write(_current_role.get(), _current_area.get())
 template_env.globals["can_manage_members"] = lambda: can_manage_members(_current_role.get())
 
 # Escritas que não exigem perfil com permissão de alteração.
 WRITE_EXEMPT_PATHS = frozenset({"/login", "/register", "/logout"})
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+# Prefixos de rota da área de cadastros de produto; todo o resto é a área financeira.
+CATALOG_PATH_PREFIXES = ("/products", "/product-settings", "/api/v1/products")
+
+
+def write_area(path: str) -> str:
+    """Área de escrita a que uma rota pertence (define quais perfis podem alterá-la)."""
+    for prefix in CATALOG_PATH_PREFIXES:
+        if path == prefix or path.startswith(prefix + "/"):
+            return AREA_CATALOG
+    return AREA_FINANCE
 
 
 async def enforce_write_permission(request: Request) -> Request | Response:
@@ -98,9 +113,15 @@ async def enforce_write_permission(request: Request) -> Request | Response:
     if request.method.upper() not in WRITE_METHODS or path in WRITE_EXEMPT_PATHS:
         return request
     current = await _current_user(request)
-    if current is None or can_write(current[1].role):
+    if current is None or can_write(current[1].role, write_area(path)):
         return request
-    message = "Seu perfil é somente leitura; peça a um proprietário para alterar o acesso."
+    if current[1].role == "viewer":
+        message = "Seu perfil é somente leitura; peça a um proprietário para alterar o acesso."
+    else:
+        message = (
+            f"O perfil {role_label(current[1].role)} não altera esta área; "
+            "peça a um proprietário para alterar o acesso."
+        )
     if path.startswith("/api/"):
         return Response(
             status_code=403,
@@ -126,6 +147,22 @@ def _format_tax_id(value: str | None) -> str:
 
 
 template_env.filters["format_tax_id"] = _format_tax_id
+
+
+def _format_brl(value: Decimal) -> str:
+    """1234.5 -> "1.234,50" (padrão pt-BR)."""
+    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _format_quantity(value: Decimal) -> str:
+    """Quantidade pt-BR sem zeros à direita: 2.5000 -> "2,5", 1500 -> "1.500"."""
+    whole, _, fraction = f"{value:,.4f}".partition(".")
+    fraction = fraction.rstrip("0")
+    return whole.replace(",", ".") + ("," + fraction if fraction else "")
+
+
+template_env.filters["brl"] = _format_brl
+template_env.filters["quantity"] = _format_quantity
 
 
 def _response(body: str, status: int = 200) -> Response:
@@ -204,6 +241,7 @@ async def _current_user(request: Request) -> tuple[User, Membership] | None:
     if current is None:
         return None
     _current_role.set(current[1].role)
+    _current_area.set(write_area(request.url.path))
     return current
 
 

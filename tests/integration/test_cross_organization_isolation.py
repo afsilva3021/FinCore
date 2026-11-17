@@ -21,6 +21,7 @@ from fincore.application.accounting import create_journal_entry
 from fincore.application.counterparties import save_counterparty
 from fincore.application.finance import create_account, create_movement
 from fincore.application.identity import register_user
+from fincore.application.products import save_product, save_product_group, save_warehouse
 from fincore.application.titles import create_titles
 from fincore.config.database import TORTOISE_ORM
 from fincore.infrastructure.models import (
@@ -33,7 +34,11 @@ from fincore.infrastructure.models import (
     JournalEntryLine,
     LedgerAccount,
     Membership,
+    Product,
+    ProductGroup,
     ReconciliationMatch,
+    UnitOfMeasure,
+    Warehouse,
 )
 from fincore.presentation.web import COOKIE_AUTH, COOKIE_CSRF, csrf_serializer, serializer
 
@@ -127,8 +132,27 @@ async def _seed_organization_a():
         description=f"{SECRET_NAME} extrato",
         amount=Decimal("50.00"),
     )
+    unit = await UnitOfMeasure.get(organization=organization, code="UN")
+    group = await save_product_group(
+        organization=organization, user=user, name=f"{SECRET_NAME} grupo"
+    )
+    warehouse = await save_warehouse(
+        organization=organization, user=user, code="SEGREDO", name=f"{SECRET_NAME} depósito"
+    )
+    product = await save_product(
+        organization=organization,
+        user=user,
+        sku=f"SEG-{uuid4().hex[:8]}",
+        name=f"{SECRET_NAME} produto",
+        unit_id=unit.id,
+        group_id=group.id,
+    )
     return {
         "organization": organization,
+        "unit": unit,
+        "group": group,
+        "warehouse": warehouse,
+        "product": product,
         "account": account,
         "open_movement": open_movement,
         "settled_movement": settled_movement,
@@ -158,6 +182,18 @@ async def _snapshot(seed: dict) -> dict:
         "journal_lines": await JournalEntryLine.filter(
             journal_entry__organization=organization
         ).count(),
+        "products": await Product.filter(organization=organization).values(
+            "id", "sku", "name", "is_active", "unit_id", "group_id"
+        ),
+        "groups": await ProductGroup.filter(organization=organization).values(
+            "id", "name", "is_active", "parent_id"
+        ),
+        "units": await UnitOfMeasure.filter(organization=organization)
+        .order_by("code")
+        .values("id", "code", "name", "is_active"),
+        "warehouses": await Warehouse.filter(organization=organization)
+        .order_by("code")
+        .values("id", "code", "name", "is_active", "is_default"),
         "matches": await ReconciliationMatch.filter(
             statement_transaction__organization=organization
         ).count(),
@@ -224,6 +260,41 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
         ("get", f"/contacts/{a['contact']}/edit", form, None),
         ("post", f"/contacts/{a['contact']}/update", form, "person_type=company&name=Invadido"),
         ("post", f"/contacts/{a['contact']}/active", form, "active=false"),
+        ("get", f"/products/{a['product']}/edit", form, None),
+        (
+            "post",
+            f"/products/{a['product']}/update",
+            form,
+            f"sku=INVADIDO&name=Invadido&unit_id={a['unit']}",
+        ),
+        ("post", f"/products/{a['product']}/active", form, "is_active=false"),
+        ("post", "/products", form, f"sku=INTRUSO-A&name=Intruso&unit_id={a['unit']}"),
+        ("post", "/products", form, f"sku=INTRUSO-B&name=Intruso&group_id={a['group']}"),
+        ("post", f"/product-settings/groups/{a['group']}/update", form, "name=Invadido"),
+        ("post", f"/product-settings/groups/{a['group']}/active", form, "is_active=false"),
+        ("post", "/product-settings/groups", form, f"name=Filho&parent_id={a['group']}"),
+        (
+            "post",
+            f"/product-settings/units/{a['unit']}/update",
+            form,
+            "code=INV&name=Invadida&decimal_places=0",
+        ),
+        ("post", f"/product-settings/units/{a['unit']}/active", form, "is_active=false"),
+        (
+            "post",
+            f"/product-settings/warehouses/{a['warehouse']}/update",
+            form,
+            "code=INV&name=Invadido",
+        ),
+        ("post", f"/product-settings/warehouses/{a['warehouse']}/active", form, "is_active=false"),
+        ("post", f"/product-settings/warehouses/{a['warehouse']}/default", form, ""),
+        ("get", f"/api/v1/products/{a['product']}", api, None),
+        (
+            "post",
+            "/api/v1/products",
+            api,
+            json.dumps({"sku": "INTRUSO-C", "name": "Intruso", "unit_id": a["unit"]}),
+        ),
         ("get", f"/api/v1/transactions/{a['open_movement']}", api, None),
         (
             "post",
@@ -249,3 +320,6 @@ async def test_another_organization_cannot_read_or_change_any_record_by_id() -> 
         assert response.status_code != 500, f"{path} quebrou com 500"
 
     assert await _snapshot(seed) == before
+    # Nada foi criado na organização B apontando para unidade ou grupo da organização A.
+    assert not await Product.filter(organization=intruder_org).exists()
+    assert not await ProductGroup.filter(organization=intruder_org).exists()

@@ -102,7 +102,6 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Migration aditiva mantém categorias e contas existentes como analíticas.
 - [x] Contratos da API e regras contábeis documentados.
 
-<<<<<<< HEAD
 ## Cadastros e consistência de interface
 
 - [x] Cadastro de clientes/fornecedores com CPF/CNPJ, endereço, contato, edição, filtro e inativação/reativação.
@@ -116,7 +115,7 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 ## UX — cadastro de subcategorias
 
 - [ ] A tela Categorias oferece ação direta para criar uma subcategoria sob o grupo sintético escolhido, com tipo e classificação analítica pré-selecionados; validação automatizada pendente.
-=======
+
 ## Correções de revisão (2026-11-05)
 
 - [x] Valores em pt-BR: ponto separando grupos de 3 dígitos é milhar (`1.500` = R$ 1.500,00); formatos ambíguos são rejeitados. Parsers de formulário centralizados em `application/money.py`; a API mantém a notação decimal canônica (`"250.00"`).
@@ -126,7 +125,6 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Cadastro exige confirmação de senha e aplica política de força no servidor (com retorno imediato no navegador); campos preenchidos são preservados após erro, exceto as senhas.
 - [x] Ruff e suíte completa (74 testes, com PostgreSQL de teste) aprovados.
 - [x] Pendências da revisão concluídas em 2026-11-06 (segredo obrigatório, limite de login, revogação de sessão, headers, perfis, N+1 e `CHECK` constraints).
->>>>>>> 552a8c89c4c1ea56746cb0baacda645697a96af0
 
 ## Aplicação separada do banco (2026-11-06)
 
@@ -184,3 +182,24 @@ Fases 1–7 validadas para o escopo implementado, com API v1 de escrita validada
 - [x] Screenshots em `docs/screenshots/` capturados no Chromium a partir do seed (desktop 2x, tema escuro e celular).
 - [x] Corrigido: visão geral não exibia saldos por conta (variável `balances` nunca enviada); "Administrador" fixo no perfil; textos "até 100/200" após a paginação.
 - [ ] Demo online: depende de hospedagem e domínio do responsável pelo projeto.
+
+## ERP fase 8 — cadastros de produto (2026-11-17)
+
+Primeira fase do roteiro em [erp-roadmap.md](erp-roadmap.md). Não há estoque, compras nem vendas ainda.
+
+- [x] Modelos `ProductGroup`, `UnitOfMeasure`, `Product` e `Warehouse`; migration `0019` aditiva, aplicada em banco limpo (0001→0019) e no banco de teste com 44 organizações existentes (todas receberam 5 unidades e 1 depósito padrão). `makemigrations` responde `No changes detected`.
+- [x] Regras puras em `domain/products.py` (SKU, GTIN com dígito verificador, NCM, quantidades sem arredondamento silencioso, casas decimais por unidade), testadas sem banco.
+- [x] Banco reforça as regras: `CHECK` de preço/estoque mínimo/formatos, SKU único por organização, código de barras único por organização quando informado e exatamente um depósito padrão por organização (índices únicos parciais).
+- [x] Concorrência: cinco cadastros simultâneos com o mesmo SKU gravam um só; trocas simultâneas de depósito padrão terminam com exatamente um padrão.
+- [x] Páginas `/products` (busca, filtros, paginação, drawer de cadastro/edição, inativar) e `/product-settings` (grupos, unidades e depósitos); API `GET/POST /api/v1/products` e `GET /api/v1/products/{id}`; `docs/openapi.yaml` validado com `openapi-spec-validator`.
+- [x] Perfil `stock` (Estoque) e permissão de escrita por área: `stock` altera só cadastros de produto, `finance` só o financeiro, `owner` tudo, `viewer` nada. Testado nas páginas e na API.
+- [x] Isolamento entre organizações: 15 novas tentativas (HTML e API) no teste de isolamento, incluindo criar produto apontando para unidade ou grupo de outra organização.
+- [x] `fincore-seed-demo` cria grupos, um segundo depósito e seis produtos fictícios.
+- [x] Ruff e suíte completa aprovados: 181 testes (122 unitários, 59 de integração com PostgreSQL 16 local na porta 5434).
+- [x] Telas abertas no Chrome com os dados do seed (lista, drawer e cadastros auxiliares). Bootstrap foi servido de uma cópia local porque o ambiente não alcança a CDN.
+- [x] Marcadores de conflito de merge que estavam neste arquivo foram removidos, preservando as duas seções.
+- [ ] Não validado neste ambiente: `docker compose up --build` (sem Docker) e o job `docker` do CI.
+- [ ] Trocar a unidade de um produto ainda é livre; a fase 9 deve bloquear quando houver movimento de estoque.
+- [ ] `infrastructure/models.py` continua em arquivo único; a divisão por área proposta no roteiro fica para depois, porque o teste de arquitetura lê esse arquivo.
+
+Próximo passo: fase 9 (estoque) — movimentos imutáveis, saldo derivado, custo médio e lançamento contábil dos ajustes.

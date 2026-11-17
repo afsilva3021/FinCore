@@ -22,6 +22,13 @@ As páginas HTML são a interface principal do FinCore. Os formulários fazem va
 - `POST /contacts`, `POST /contacts/:contact_id/update` — cria ou atualiza cliente/fornecedor, com CSRF.
 - `POST /contacts/:contact_id/active` — inativa ou reativa contato; dados e vínculos históricos são preservados.
 - `GET /contacts/postal-code?cep=01001000` — consulta ViaCEP, exige sessão e retorna endereço em JSON; erros upstream são controlados.
+- `GET /products` — produtos com busca (`q`), filtros `status` e `group` e paginação.
+- `GET /products/:product_id/edit` — formulário lateral de edição.
+- `POST /products`, `POST /products/:product_id/update` — cria ou altera produto, com CSRF; erro de validação responde `400` com o formulário preenchido.
+- `POST /products/:product_id/active` — inativa ou reativa o produto.
+- `GET /product-settings` — grupos de produto, unidades de medida e depósitos.
+- `POST /product-settings/groups`, `/units`, `/warehouses` — cria; `POST .../:item_id/update` altera; `POST .../:item_id/active` inativa ou reativa.
+- `POST /product-settings/warehouses/:item_id/default` — define o depósito padrão (a organização sempre tem exatamente um).
 
 Sessões usam cookie assinado, HttpOnly e SameSite=Lax; formulários de alteração de estado validam token CSRF.
 
@@ -58,8 +65,11 @@ As rotas JSON usam o mesmo cookie de sessão assinado das páginas. Listas sempr
 | POST | `/api/v1/titles` | JSON `{operation_key,type,description,counterparty_name,account_id,amount,issue_date,due_date,payment_method,installments?,category_id?,document_number?,notes?}` | `201 {items:[...]}`; reenvio com a mesma chave devolve os mesmos títulos; chave de outra organização = `409` |
 | POST | `/api/v1/titles/{id}/settlements` | JSON `{operation_key,amount_applied,paid_on,account_id,payment_method,discount?,interest?,fine?,fees?}` | `201` com a baixa; reenvio idempotente; regra violada = `400` com o motivo |
 | POST | `/api/v1/titles/{id}/cancel` | sem payload | `200` com o título cancelado; com baixa ou já liquidado = `409` |
+| GET | `/api/v1/products` | `limit`, `offset`, `q` (código, descrição ou código de barras), `status=all\|active\|inactive` | `{items:[{id,sku,name,description,barcode,ncm,unit:{id,code},group,sale_price,currency,min_stock,tracks_stock,is_active}],limit,offset,total}` |
+| GET | `/api/v1/products/{id}` | UUID do produto | Produto JSON ou 404 |
+| POST | `/api/v1/products` | JSON `{sku,name,unit_id,group_id?,description?,barcode?,ncm?,sale_price?,min_stock?,tracks_stock?}`; `sale_price` e `min_stock` são strings decimais | `201` com o produto; dado inválido = `400 invalid_product`; SKU ou código de barras repetido = `409 conflict` |
 
-A especificação OpenAPI 3.1 dos endpoints de títulos e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
+A especificação OpenAPI 3.1 dos endpoints de títulos, produtos e de sessão está em [`docs/openapi.yaml`](openapi.yaml) (validada com `openapi-spec-validator`).
 
 ### Sessão, CSRF e escrita
 
@@ -125,4 +135,4 @@ O cadastro recebe contraparte, descrição, valor total, emissão/vencimento ini
 
 ## Autorização por perfil
 
-Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que exige perfil `owner` ou `finance` (exceto `/login`, `/register` e `/logout`). Perfil `viewer` recebe `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.
+Toda requisição `POST`, `PUT`, `PATCH` ou `DELETE` autenticada passa por um middleware que confere o perfil contra a área da rota (exceto `/login`, `/register` e `/logout`). Rotas de cadastros de produto (`/products`, `/product-settings`, `/api/v1/products`) exigem `owner` ou `stock`; todas as outras exigem `owner` ou `finance`. Perfil `viewer` e perfis de outra área recebem `403`; na API, o corpo é `{"error": {"code": "forbidden", "message": "..."}}`.
